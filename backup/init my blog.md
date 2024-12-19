@@ -1,0 +1,1 @@
+this init my blog
