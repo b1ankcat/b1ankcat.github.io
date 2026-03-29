@@ -365,7 +365,7 @@ $$</p>
                     <span class="pl-k">for</span> (<span class="pl-k">int</span> j2 = <span class="pl-c1">0</span>; j2 &lt; Nc; j2+=Nr){
                         <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;ma[i2 * K];
                         <span class="pl-k">const</span> <span class="pl-k">double</span>* b = &amp;mb[j2];
-                        <span class="pl-k">double</span>*           a = &amp;mc[i2 * N + j2];
+                        <span class="pl-k">double</span>*           c = &amp;mc[i2 * N + j2];
                         matmul_cache_block_kernel&lt;Nr, Mr, Kc, Nc&gt;(a, b, c, N, K);
                     }
                 }
