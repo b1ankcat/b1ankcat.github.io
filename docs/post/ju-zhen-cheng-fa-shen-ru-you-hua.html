@@ -26,7 +26,7 @@ $$
 ### 0. 朴素c++实现
 
 ```c++
-void matmulNaive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
+void matmul_naive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
 {
     auto M = A.row();
     auto K = A.col();
@@ -47,7 +47,7 @@ void matmulNaive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<
 ### 1. 改变循环顺序
 
 ```c++
-void matmulChangeLoopOrder(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
+void matmul_change_order(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
 {
     auto M = A.row();
     auto K = A.col();
@@ -80,7 +80,7 @@ $$
 ### 0. 朴素c++实现
 
 ```c++
-void matmulNaive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
+void matmul_naive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
 {
     auto M = A.row();
     auto K = A.col();
@@ -101,7 +101,7 @@ void matmulNaive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<
 ### 1. 改变循环顺序
 
 ```c++
-void matmulChangeLoopOrder(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
+void matmul_change_order(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
 {
     auto M = A.row();
     auto K = A.col();
@@ -200,7 +200,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 $$</p>
 <hr>
 <h3>0. 朴素c++实现</h3>
-<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">matmulNaive</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">matmul_naive</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
 {
     <span class="pl-k">auto</span> M = A.<span class="pl-c1">row</span>();
     <span class="pl-k">auto</span> K = A.<span class="pl-c1">col</span>();
@@ -216,7 +216,7 @@ $$</p>
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953"><img width="897" height="236" alt="Image" src="https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953" style="max-width: 100%; height: auto; max-height: 236px;"></a></p>
 <hr>
 <h3>1. 改变循环顺序</h3>
-<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">matmulChangeLoopOrder</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">matmul_change_order</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
 {
     <span class="pl-k">auto</span> M = A.<span class="pl-c1">row</span>();
     <span class="pl-k">auto</span> K = A.<span class="pl-c1">col</span>();
@@ -236,7 +236,7 @@ $$</p>
 <p><strong>最终结果</strong> 性能相比Naive实现提升了约12.6倍。</p>
 <hr>
 <h3>2. Tiling分片</h3>
-<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">matmulTiling</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">matmul_tiling</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
 {
     <span class="pl-k">auto</span> M = A.<span class="pl-c1">row</span>();
     <span class="pl-k">auto</span> K = A.<span class="pl-c1">col</span>();
@@ -248,7 +248,7 @@ $$</p>
             <span class="pl-k">for</span> (<span class="pl-k">int</span> jb = <span class="pl-c1">0</span>; jb &lt; N; jb += BLOCK){
                 <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;<span class="pl-c1">A</span>(ib, kb);
                 <span class="pl-k">const</span> <span class="pl-k">double</span>* mb = &amp;<span class="pl-c1">B</span>(kb, jb);
-                <span class="pl-k">double</span>* c = &amp;<span class="pl-c1">C</span>(ib, jb);
+                <span class="pl-k">double</span>*           c = &amp;<span class="pl-c1">C</span>(ib, jb);
                 
                 <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; BLOCK; ++i, c+=N, a+=K){
                     <span class="pl-k">const</span> <span class="pl-k">double</span>* b = mb;
@@ -262,9 +262,9 @@ $$</p>
         }
     }
 }</pre></div>
-<p>将块外循环和块内循环分离：</p>
+<p>将块外循环和块内循环分离，通过增加数据的复用率来突破Memory Wall，大幅提升Arithmetic Intensit.：</p>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> BLOCK&gt;
-<span class="pl-k">void</span> <span class="pl-en">matmul_block_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* mb, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K,)
+<span class="pl-k">void</span> <span class="pl-en">matmul_block_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* mb, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K)
 {
     <span class="pl-c"><span class="pl-c">/*</span>* </span>
 <span class="pl-c">    * 对BLOCK内的i循环时，i移动时，c和a也要跟着移动</span>
@@ -281,7 +281,7 @@ $$</p>
     }
 }
 
-<span class="pl-k">void</span> <span class="pl-en">matmulTiling</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
+<span class="pl-k">void</span> <span class="pl-en">matmul_tiling</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
 {
     <span class="pl-k">auto</span> M = A.<span class="pl-c1">row</span>();
     <span class="pl-k">auto</span> K = A.<span class="pl-c1">col</span>();
@@ -293,20 +293,19 @@ $$</p>
             <span class="pl-k">for</span> (<span class="pl-k">int</span> jb = <span class="pl-c1">0</span>; jb &lt; N; jb += BLOCK){
                 <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;<span class="pl-c1">A</span>(ib, kb);
                 <span class="pl-k">const</span> <span class="pl-k">double</span>* mb = &amp;<span class="pl-c1">B</span>(kb, jb);
-                <span class="pl-k">double</span>* c = &amp;<span class="pl-c1">C</span>(ib, jb);
+                <span class="pl-k">double</span>*           c = &amp;<span class="pl-c1">C</span>(ib, jb);
                 matmul_block_kernel&lt;BLOCK&gt;(a, mb, c, N, K);
             }
         }
     }
 }</pre></div>
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/58ab61c1-c7f8-4f20-a3c4-3fe4c24f75ff"><img width="426" height="491" alt="Image" src="https://github.com/user-attachments/assets/58ab61c1-c7f8-4f20-a3c4-3fe4c24f75ff" style="max-width: 100%; height: auto; max-height: 491px;"></a></p>
-<p>通过增加数据的复用率来突破Memory Wall，大幅提升Arithmetic Intensit.</p>
 <p><strong>最终结果</strong> 性能相比Naive实现提升了约38.9倍。</p>
 <hr>
 <h3>3. 矢量化</h3>
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/58b4578a-8ee8-45e7-97d9-439704012887"><img width="962" height="365" alt="Image" src="https://github.com/user-attachments/assets/58b4578a-8ee8-45e7-97d9-439704012887" style="max-width: 100%; height: auto; max-height: 365px;"></a></p>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> BLOCK&gt;
-<span class="pl-k">void</span> <span class="pl-en">matmul_avxblock_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* mb, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K,)
+<span class="pl-k">void</span> <span class="pl-en">matmul_avxblock_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* mb, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K)
 {
     <span class="pl-k">constexpr</span> <span class="pl-k">int</span> avx_doubles = <span class="pl-c1">256</span> / (<span class="pl-k">sizeof</span>(<span class="pl-k">double</span>) * <span class="pl-c1">8</span>);
     <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; BLOCK; ++i, c+=N, a+=K){
@@ -324,8 +323,231 @@ $$</p>
 }</pre></div>
 <p><strong>最终结果</strong> 性能相比Naive实现提升了约48.13倍。</p>
 <hr>
-<h3>4. 缓存感知</h3>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/cd6056b0-1b73-4d27-ad32-e044cc2ccfcb"><img width="555" height="480" alt="Image" src="https://github.com/user-attachments/assets/cd6056b0-1b73-4d27-ad32-e044cc2ccfcb" style="max-width: 100%; height: auto; max-height: 480px;"></a></p></div>
+<h3>4. 基于缓存的tiling分块</h3>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/4a95add4-8108-4a2a-903c-485c756eb7f5"><img width="565" height="797" alt="Image" src="https://github.com/user-attachments/assets/4a95add4-8108-4a2a-903c-485c756eb7f5" style="max-width: 100%; height: auto; max-height: 797px;"></a></p>
+<p>将大矩阵切分为适合装入 L1 和 L2 Cache 的小块。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nr, <span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Kc, <span class="pl-k">int</span> Nc&gt;
+<span class="pl-k">void</span> <span class="pl-en">matmul_cache_block_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* mb, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K)
+{
+    <span class="pl-k">constexpr</span> <span class="pl-k">int</span> avx_doubles = <span class="pl-c1">256</span> / (<span class="pl-k">sizeof</span>(<span class="pl-k">double</span>) * <span class="pl-c1">8</span>);
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i, c+=N, a+=K){
+        <span class="pl-k">const</span> <span class="pl-k">double</span>* b = mb;
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; Kc; ++k, b+=N){
+            __m256d a_reg = <span class="pl-c1">_mm256_broadcast_sd</span>(&amp;a[k]);  <span class="pl-c"><span class="pl-c">//</span> 将一个a广播为一个矢量</span>
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; Nr; j+=avx_doubles){
+                __m256d b_reg = <span class="pl-c1">_mm256_loadu_pd</span>(&amp;b[j]);  <span class="pl-c"><span class="pl-c">//</span> 加载avx_doubles个b和c进reg</span>
+                __m256d c_reg = <span class="pl-c1">_mm256_loadu_pd</span>(&amp;c[j]);
+                c_reg  = <span class="pl-c1">_mm256_fmadd_pd</span>(a_reg, b_reg, c_reg);
+                <span class="pl-c1">_mm256_storeu_pd</span>(&amp;c[j], c_reg);  <span class="pl-c"><span class="pl-c">//</span> 将矢量乘加后的reg写回c</span>
+            }
+        }
+    }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">matmul_cache_tiling</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
+{
+    <span class="pl-k">auto</span> M = A.<span class="pl-c1">row</span>();
+    <span class="pl-k">auto</span> K = A.<span class="pl-c1">col</span>();
+    <span class="pl-k">auto</span> N = B.<span class="pl-c1">col</span>();
+    <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">    * Nc, Mc, Kc是block cahce的大小</span>
+<span class="pl-c">    * Nr, Mr是block register的大小</span>
+<span class="pl-c">    *<span class="pl-c">*/</span></span>
+    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> Mc = <span class="pl-c1">180</span>, Nc = <span class="pl-c1">96</span>, Kc = <span class="pl-c1">240</span>, Nr = <span class="pl-c1">12</span>, Mr = <span class="pl-c1">4</span>;
+    
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> ib = <span class="pl-c1">0</span>; ib &lt; M; ib += Mc){
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> kb = <span class="pl-c1">0</span>; kb &lt; K; kb += Kc){
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> jb = <span class="pl-c1">0</span>; jb &lt; N; jb += Nc){
+                <span class="pl-k">const</span> <span class="pl-k">double</span>* ma = &amp;<span class="pl-c1">A</span>(ib, kb);
+                <span class="pl-k">const</span> <span class="pl-k">double</span>* mb = &amp;<span class="pl-c1">B</span>(kb, jb);
+                <span class="pl-k">double</span>*           mc = &amp;<span class="pl-c1">C</span>(ib, jb);
+                <span class="pl-k">for</span> (<span class="pl-k">int</span> i2 = <span class="pl-c1">0</span>; i2 &lt; Mc; i2+=Mr){
+                    <span class="pl-k">for</span> (<span class="pl-k">int</span> j2 = <span class="pl-c1">0</span>; j2 &lt; Nc; j2+=Nr){
+                        <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;ma[i2 * K];
+                        <span class="pl-k">const</span> <span class="pl-k">double</span>* b = &amp;mb[j2];
+                        <span class="pl-k">double</span>*           a = &amp;mc[i2 * N + j2];
+                        matmul_cache_block_kernel&lt;Nr, Mr, Kc, Nc&gt;(c, a, b, N, K);
+                    }
+                }
+            }
+        }
+    }
+}</pre></div>
+<p><strong>最终结果</strong> 性能相比Naive实现提升了约56.1倍。</p>
+<hr>
+<h3>5. 寄存器分配</h3>
+<p>在最内层内核中，显式地向编译器提供寄存器使用提示，确保充分利用 CPU 的所有向量寄存器。这极大地减少了 Load/Store 指令，避免了 Register Spilling（寄存器溢出），从而将指令吞吐量推向理论峰值。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nr, <span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Kc, <span class="pl-k">int</span> Nc&gt;
+<span class="pl-k">void</span> <span class="pl-en">matmul_reg_block_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* ma, <span class="pl-k">const</span> <span class="pl-k">double</span>* b, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K)
+{
+    <span class="pl-k">constexpr</span> <span class="pl-k">int</span> avx_doubles = <span class="pl-c1">256</span> / (<span class="pl-k">sizeof</span>(<span class="pl-k">double</span>) * <span class="pl-c1">8</span>);
+    <span class="pl-k">constexpr</span> <span class="pl-k">int</span> CREG_CNT{Mr * Nr / avx_doubles};
+    std::array&lt;__m256d, CREG_CNT&gt; res;
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> idx = <span class="pl-c1">0</span>; idx &lt; CREG_CNT; ++idx){
+        res[idx] = <span class="pl-c1">__mm256_setzero_pd</span>();
+    }
+    
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; Kc; ++k, b+=N){
+        <span class="pl-k">const</span> <span class="pl-k">double</span>* a = ma;
+        <span class="pl-k">int</span> idx = <span class="pl-c1">0</span>;
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i, a+=K){
+            __m256d a_reg = <span class="pl-c1">_mm256_broadcast_sd</span>(&amp;a[k]); 
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; Nr; j+=avx_doubles, ++idx){
+                res[idx] = <span class="pl-c1">_mm256_fmadd_pd</span>(a_reg, <span class="pl-c1">_mm256_loadu_pd</span>(&amp;b[j]), res[idx]);
+            }
+        }
+    }
+    
+    <span class="pl-k">int</span> idx = <span class="pl-c1">0</span>;
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i, c+=N){
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; Nr; j+=avx_doubles, ++idx){
+            <span class="pl-c1">load_inc_store_double</span>(&amp;c[j], res[idx]);
+        }
+    }
+}</pre></div>
+<p><strong>最终结果</strong> 性能相比Naive实现提升了约108倍。</p>
+<hr>
+<h3>6. 多线程并行</h3>
+<p>将计算任务按 C 的行进行切分，分配给多个 CPU 核心。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate">#<span class="pl-k">pragma</span> omp parallel for   <span class="pl-c"><span class="pl-c">//</span> 线程间不需要同步</span>
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> ib = <span class="pl-c1">0</span>; ib &lt; M; ib += Mc){
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> kb = <span class="pl-c1">0</span>; kb &lt; K; kb += Kc){
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> jb = <span class="pl-c1">0</span>; jb &lt; N; jb += Nc){
+               <span class="pl-c"><span class="pl-c">//</span> ...</span>
+            }
+        }
+    }</pre></div>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/345dde22-fc33-4cff-aca3-cf141eaa32f9"><img width="418" height="207" alt="Image" src="https://github.com/user-attachments/assets/345dde22-fc33-4cff-aca3-cf141eaa32f9" style="max-width: 100%; height: auto; max-height: 207px;"></a></p>
+<p><strong>最终结果</strong> 性能相比Naive实现提升了约326.1倍。</p>
+<hr>
+<h3>7. 矩阵tile布局</h3>
+<p>在进入内核计算之前，将具有 Strided 内存布局的子 Tile，预先 Copy 到一段连续的内存 Buffer 中。这样可以消除最内层循环中的 Stride 计算，确保在读取 A 和 B 矩阵块时拥有连续访问。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/e706d5a4-d5fa-4850-95bb-923a2e72fc6d"><img width="284" height="451" alt="Image" src="https://github.com/user-attachments/assets/e706d5a4-d5fa-4850-95bb-923a2e72fc6d" style="max-width: 100%; height: auto; max-height: 451px;"></a></p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nr, <span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Kc&gt;
+<span class="pl-k">void</span> <span class="pl-en">matmul_reg_block_reordered_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* b, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N)
+{
+    <span class="pl-k">constexpr</span> <span class="pl-k">int</span> avx_doubles = <span class="pl-c1">256</span> / (<span class="pl-k">sizeof</span>(<span class="pl-k">double</span>) * <span class="pl-c1">8</span>);
+    <span class="pl-k">constexpr</span> <span class="pl-k">int</span> CREG_CNT{Mr * Nr / avx_doubles};
+    std::array&lt;__m256d, CREG_CNT&gt; res;
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> idx = <span class="pl-c1">0</span>; idx &lt; CREG_CNT; ++idx){
+        res[idx] = <span class="pl-c1">__mm256_setzero_pd</span>();
+    }
+    
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; Kc; ++k, b+=Nr, a+=Mr){
+        <span class="pl-k">int</span> idx = <span class="pl-c1">0</span>;
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i){
+            __m256d a_reg = <span class="pl-c1">_mm256_broadcast_sd</span>(&amp;a[i]); 
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; Nr; j+=avx_doubles, ++idx){
+                res[idx] = <span class="pl-c1">_mm256_fmadd_pd</span>(a_reg, <span class="pl-c1">_mm256_loadu_pd</span>(&amp;b[j]), res[idx]);
+            }
+        }
+    }
+    
+    <span class="pl-k">int</span> idx = <span class="pl-c1">0</span>;
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i, c+=N){
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; Nr; j+=avx_doubles, ++idx){
+            <span class="pl-c1">load_inc_store_double</span>(&amp;c[j], res[idx]);
+        }
+    }
+}</pre></div>
+<p><strong>最终结果</strong> 性能相比Naive实现提升了约422.2倍。</p>
+<hr>
+<h3>8. 使用c++26的SIMD指令</h3>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nr, <span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Kc&gt;
+<span class="pl-k">void</span> <span class="pl-en">matmul_reg_block_reordered_simd_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* b, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N)
+{
+    <span class="pl-k">constexpr</span> <span class="pl-k">int</span> avx_doubles = <span class="pl-c1">256</span> / (<span class="pl-k">sizeof</span>(<span class="pl-k">double</span>) * <span class="pl-c1">8</span>);
+    <span class="pl-k">constexpr</span> <span class="pl-k">int</span> CREG_CNT{Mr * Nr / avx_doubles};
+    std::array&lt;simd_d, CREG_CNT&gt; c_reg{};
+    
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; Kc; ++k, b+=Nr, a+=Mr){
+        <span class="pl-k">int</span> idx = <span class="pl-c1">0</span>;
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i){
+            simd_d <span class="pl-smi">a_reg</span>(a[i]); 
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; Nr; j+=avx_doubles, ++idx){
+                c_reg[idx] += a_reg * <span class="pl-c1">simd_d</span>(&amp;b[j], stdx::element_aligned);
+            }
+        }
+    }
+    
+    <span class="pl-k">int</span> idx = <span class="pl-c1">0</span>;
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i, c+=N){
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; Nr; j+=avx_doubles, ++idx){
+            <span class="pl-c1">load_inc_store_double</span>(&amp;c[j], c_reg[idx]);
+        }
+    }
+}</pre></div>
+<p><strong>最终结果</strong> 零开销抽象。</p>
+<hr>
+<h3>9. 循环展开</h3>
+<p>彻底展开最内层循环，消除循环的分支跳转开销。展开后的长指令流使得编译器能拥有更大的指令窗口，从而进行更好的指令调度，提升指令级并行度（ILP）。为了避免手写大量展开代码丧失灵活性，利用std::make_index_sequence 与折叠表达式可以在编译期动态生成展开后的汇编代码。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-c"><span class="pl-c">/*</span>* 计算循环展开 *<span class="pl-c">*/</span></span>
+<span class="pl-k">template</span>&lt;<span class="pl-k">typename</span> T, <span class="pl-c1">size_t</span>... J&gt;
+<span class="pl-k">void</span> <span class="pl-en">compute_row</span>(<span class="pl-k">const</span> simd&lt;T&gt;&amp; a, <span class="pl-k">const</span> simd&lt;T&gt;&amp; b, <span class="pl-k">const</span> simd&lt;T&gt;&amp; r, std::index_sequence&lt;J...&gt;)
+{
+    (..., (r[J] += a * b[J]));
+}
+
+<span class="pl-k">template</span>&lt;<span class="pl-k">typename</span> T, <span class="pl-c1">size_t</span>... I, <span class="pl-c1">size_t</span>... J&gt;
+<span class="pl-k">void</span> <span class="pl-en">compute_kernel</span>(<span class="pl-k">const</span> T* a, <span class="pl-k">const</span> T* b, simd&lt;T&gt;* r, std::index_sequence&lt;I...&gt;, std::index_sequence&lt;J...&gt;)
+{
+    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> Nrs= <span class="pl-k">sizeof</span>...(J);
+    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> seq= std::make_index_sequence&lt;Nrs&gt;{};
+    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> align= stdx::element_aligned;
+    
+    simd&lt;T&gt; bs[Nrs] = {simd&lt;T&gt;(&amp;b[J * simd&lt;T&gt;::<span class="pl-c1">size</span>()], align)...};
+    (..., (<span class="pl-c1">compute_row</span>(simd&lt;T&gt;(a[I]), bs, &amp;r[I * Nrs], seq)));
+}
+
+<span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Nrs, <span class="pl-k">typename</span> T&gt;
+<span class="pl-k">void</span> <span class="pl-en">compute_kernel</span>(<span class="pl-k">const</span> T* a, <span class="pl-k">const</span> T* b, simd&lt;T&gt;* r)
+{
+    <span class="pl-c1">compute_kernel</span>(a, b, r,std::make_index_sequence&lt;Mr&gt;{}, std::make_index_sequence&lt;Nrs&gt;{});
+}
+
+<span class="pl-c"><span class="pl-c">/*</span>* 读写循环展开 *<span class="pl-c">*/</span></span>
+<span class="pl-k">template</span>&lt;<span class="pl-c1">soze_t</span> RowIdx, <span class="pl-k">typename</span> T, <span class="pl-k">int</span> WIDTH, <span class="pl-c1">size_t</span>... I&gt;
+<span class="pl-k">void</span> <span class="pl-en">store_row</span>(T* c, simd&lt;T, WIDTH&gt;* r, std::index_sequence&lt;I...&gt;)
+{
+    (..., (<span class="pl-c1">load_inc_store</span>(&amp;c[I * WIDTH], r[RowIdx * <span class="pl-k">sizeof</span>...(I) + I])));
+}
+
+<span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nrs, <span class="pl-k">typename</span> T,<span class="pl-k">int</span> WIDTH, <span class="pl-c1">size_t</span>... RowIndices&gt;
+<span class="pl-k">void</span> <span class="pl-en">store_kernel</span>(T* c, simd&lt;T, WIDTH&gt;* r, <span class="pl-k">int</span> N, std::index_sequence&lt;RowIndices...&gt;)
+{
+    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> seq= std::make_index_sequence&lt;Nrs&gt;{};
+    (..., (store_row&lt;RowIndices&gt;(c, r, seq), c+=N));
+}
+
+<span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Nrs, <span class="pl-k">typename</span> T&gt;
+<span class="pl-k">void</span> <span class="pl-en">store_kernel</span>(T* c, simd&lt;T, WIDTH&gt;* r, <span class="pl-k">int</span> N)
+{
+    <span class="pl-c1">store_kernel</span>(c, r, N, std::make_index_sequence&lt;Nrs&gt;{});
+}
+
+<span class="pl-c"><span class="pl-c">/*</span>* 循环展开后的完整kernel函数 *<span class="pl-c">*/</span></span>
+<span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nr, <span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Kc, <span class="pl-k">typename</span> T&gt;
+<span class="pl-k">void</span> <span class="pl-en">matmul_unrolling_kernel</span>(<span class="pl-k">const</span> T* a, <span class="pl-k">const</span> T* b, T* c, <span class="pl-k">int</span> N)
+{
+    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> num_of_elems_in_reg = stdx::simd_size_v&lt;T, stdx::simd_abi:native&lt;T&gt;&gt;;
+    <span class="pl-k">constexpr</span> <span class="pl-k">int</span> Nrs{Nr / num_of_elems_in_reg };
+    <span class="pl-c1">static_assert</span>(Nr % num_of_elems_in_reg == <span class="pl-c1">0</span>, <span class="pl-s"><span class="pl-pds">"</span>Nr must be divisible by num_of_elems_in_reg <span class="pl-pds">"</span></span>);
+    
+    fix_simd&lt;T, num_of_elems_in_reg&gt; r[Nrs*Mr] = {};
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; Kc; ++k, b+=Nr, a+=Mr){
+        compute_kernel&lt;Mr, Nrs&gt;(a, b, r);
+    }
+    store_kernel&lt;Mr, Nrs&gt;(c, r, N);
+}</pre></div>
+<p><strong>最终结果</strong> 性能相比Naive实现提升了约434.28倍。</p>
+<hr>
+<h3>10. 预取</h3>
+<p>在代码中手动插入预取指令，提前将下一轮所需的 Cache Line 取入缓存，用来掩盖内存访问延迟。尽管硬件预取已经很强，但对于跨步距的矩阵 C 写入，显式软件预取仍带来了小幅性能提升。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-en">__mm_prefetch</span>(c, _MM_HINT_NTA);</pre></div>
+<p><strong>最终结果</strong> 性能相比Naive实现提升了约452.4倍。</p>
+<hr>
+<h3>11. OpenBlas标准性能</h3>
+<p>OpenBlas的标准性能为Naive实现的约490.3倍。可以看到，OpenBlas的优化真的很厉害。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
