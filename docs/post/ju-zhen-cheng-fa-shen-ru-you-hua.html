@@ -23,7 +23,7 @@ $$
 $$
 
 ---
-### 朴素c++实现
+### 0. 朴素c++实现
 
 ```c++
 void matmulNaive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
@@ -44,7 +44,7 @@ void matmulNaive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<
 <img width='897' height='236' alt='Image' src='https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953' />
 
 ---
-### 改变循环顺序
+### 1. 改变循环顺序
 
 ```c++
 void matmulChangeLoopOrder(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
@@ -61,7 +61,8 @@ void matmulChangeLoopOrder(const Matrix<double>& A, const Matrix<double>& B, con
     }
 }
 ```
-在 i-j-k 顺序下，内层循环对矩阵 B 的访问是大Strided的，会导致极差的空间局部性并浪费 Cache Line。">
+
+在 **i-j-k** 顺序下，在最内层的循环中，可以看到对 **A(i, k)** 的访问是连续的，但是 **B(k, j)** 的访问会有一个 **j** 大小的Strided。">
 <meta property="og:title" content="矩阵乘法深入优化">
 <meta property="og:description" content="### 矩阵setup
 
@@ -76,7 +77,7 @@ $$
 $$
 
 ---
-### 朴素c++实现
+### 0. 朴素c++实现
 
 ```c++
 void matmulNaive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
@@ -97,7 +98,7 @@ void matmulNaive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<
 <img width='897' height='236' alt='Image' src='https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953' />
 
 ---
-### 改变循环顺序
+### 1. 改变循环顺序
 
 ```c++
 void matmulChangeLoopOrder(const Matrix<double>& A, const Matrix<double>& B, const Matrix<double>& C)
@@ -114,7 +115,8 @@ void matmulChangeLoopOrder(const Matrix<double>& A, const Matrix<double>& B, con
     }
 }
 ```
-在 i-j-k 顺序下，内层循环对矩阵 B 的访问是大Strided的，会导致极差的空间局部性并浪费 Cache Line。">
+
+在 **i-j-k** 顺序下，在最内层的循环中，可以看到对 **A(i, k)** 的访问是连续的，但是 **B(k, j)** 的访问会有一个 **j** 大小的Strided。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://b1ankcat.github.io/post/ju-zhen-cheng-fa-shen-ru-you-hua.html">
 <meta property="og:image" content="https://github.githubassets.com/favicons/favicon.svg">
@@ -197,7 +199,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 \text{FLOPS} = \text{cores} \times \frac{\text{cycles}}{\text{seconds}} \times \frac{\text{FLOPs}}{\text{cycles}}
 $$</p>
 <hr>
-<h3>朴素c++实现</h3>
+<h3>0. 朴素c++实现</h3>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">matmulNaive</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
 {
     <span class="pl-k">auto</span> M = A.<span class="pl-c1">row</span>();
@@ -213,7 +215,7 @@ $$</p>
 }</pre></div>
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953"><img width="897" height="236" alt="Image" src="https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953" style="max-width: 100%; height: auto; max-height: 236px;"></a></p>
 <hr>
-<h3>改变循环顺序</h3>
+<h3>1. 改变循环顺序</h3>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">matmulChangeLoopOrder</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
 {
     <span class="pl-k">auto</span> M = A.<span class="pl-c1">row</span>();
@@ -227,7 +229,39 @@ $$</p>
         }
     }
 }</pre></div>
-<p>在 i-j-k 顺序下，内层循环对矩阵 B 的访问是大Strided的，会导致极差的空间局部性并浪费 Cache Line。改为 i-k-j 后，对 B 矩阵和 C 矩阵的访问变为步长为1的连续访问，这不仅最大化了缓存行利用率，还能有效触发硬件预取器。</p></div>
+<p>在 <strong>i-j-k</strong> 顺序下，在最内层的循环中，可以看到对 <strong>A(i, k)</strong> 的访问是连续的，但是 <strong>B(k, j)</strong> 的访问会有一个 <strong>j</strong> 大小的Strided。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/fdd96abf-3291-4968-af63-33f94aba5efc"><img width="491" height="499" alt="Image" src="https://github.com/user-attachments/assets/fdd96abf-3291-4968-af63-33f94aba5efc" style="max-width: 100%; height: auto; max-height: 499px;"></a></p>
+<p>改为 <strong>i-k-j</strong> 顺序后，在最内层的循环中，可以看到对于A矩阵，<strong>A(i, k)</strong> 的访问还是连续的，而此时对 <strong>B(k, j)</strong> 和 <strong>C(i, j)</strong> 的访问也会变成连续的的了。这不仅最大化了缓存行利用率，还能有效触发硬件预取器。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/5d5739ca-d0fc-41c2-9a62-2d109b37f06a"><img width="485" height="488" alt="Image" src="https://github.com/user-attachments/assets/5d5739ca-d0fc-41c2-9a62-2d109b37f06a" style="max-width: 100%; height: auto; max-height: 488px;"></a></p>
+<p><strong>最终结果</strong> 性能相比Naive实现提升了约12.6倍。</p>
+<hr>
+<h3>2. Tiling分片</h3>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">matmulTiling</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
+{
+    <span class="pl-k">auto</span> M = A.<span class="pl-c1">row</span>();
+    <span class="pl-k">auto</span> K = A.<span class="pl-c1">col</span>();
+    <span class="pl-k">auto</span> N = B.<span class="pl-c1">col</span>();
+    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> BLOCK = <span class="pl-c1">64</span>;
+    
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> ib = <span class="pl-c1">0</span>; ib &lt; M; ib += BLOCK){
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> kb = <span class="pl-c1">0</span>; kb &lt; K; kb += BLOCK){
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> jb = <span class="pl-c1">0</span>; jb &lt; N; jb += BLOCK){
+                <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;<span class="pl-c1">A</span>(ib, kb);
+                <span class="pl-k">const</span> <span class="pl-k">double</span>* mb = &amp;<span class="pl-c1">B</span>(kb, jb);
+                <span class="pl-k">double</span>* c = &amp;<span class="pl-c1">C</span>(ib, jb);
+                
+                <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; BLOCK; ++i, c+=N, a+=K){
+                    <span class="pl-k">const</span> <span class="pl-k">double</span>* b = mb;
+                    <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; BLOCK; ++k, b+=N){
+                        <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; BLOCK; ++j){
+                            <span class="pl-c1">c</span>(j) += <span class="pl-c1">a</span>(k) * <span class="pl-c1">b</span>(j);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}</pre></div></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
