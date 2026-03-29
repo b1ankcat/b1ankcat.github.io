@@ -34,7 +34,7 @@ void matmulNaive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<
     for (int i = 0; i < M; ++i){
         for (int j = 0; i < N; ++j){
             for (int k = 0; k < K; ++k){
-                C(i, j) += A(i, k) * B(k, j);
+                C(i, j) += A(i, k) * B(k, j);  // 最内侧按一行A乘以一列B得到一个C的顺序就计算
             }
         }
     }
@@ -55,7 +55,7 @@ void matmulChangeLoopOrder(const Matrix<double>& A, const Matrix<double>& B, con
     for (int i = 0; i < M; ++i){
         for (int k = 0; k < K; ++k){
             for (int j = 0; j < N; ++j){
-                C(i, j) += A(i, k) * B(k, j);
+                C(i, j) += A(i, k) * B(k, j);  // 最内侧按一个A乘以一行B得到一行C的顺序就计算
             }
         }
     }
@@ -88,7 +88,7 @@ void matmulNaive(const Matrix<double>& A, const Matrix<double>& B, const Matrix<
     for (int i = 0; i < M; ++i){
         for (int j = 0; i < N; ++j){
             for (int k = 0; k < K; ++k){
-                C(i, j) += A(i, k) * B(k, j);
+                C(i, j) += A(i, k) * B(k, j);  // 最内侧按一行A乘以一列B得到一个C的顺序就计算
             }
         }
     }
@@ -109,7 +109,7 @@ void matmulChangeLoopOrder(const Matrix<double>& A, const Matrix<double>& B, con
     for (int i = 0; i < M; ++i){
         for (int k = 0; k < K; ++k){
             for (int j = 0; j < N; ++j){
-                C(i, j) += A(i, k) * B(k, j);
+                C(i, j) += A(i, k) * B(k, j);  // 最内侧按一个A乘以一行B得到一行C的顺序就计算
             }
         }
     }
@@ -208,7 +208,7 @@ $$</p>
     <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; M; ++i){
         <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; i &lt; N; ++j){
             <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; K; ++k){
-                <span class="pl-c1">C</span>(i, j) += <span class="pl-c1">A</span>(i, k) * <span class="pl-c1">B</span>(k, j);
+                <span class="pl-c1">C</span>(i, j) += <span class="pl-c1">A</span>(i, k) * <span class="pl-c1">B</span>(k, j);  <span class="pl-c"><span class="pl-c">//</span> 最内侧按一行A乘以一列B得到一个C的顺序就计算</span>
             }
         }
     }
@@ -224,7 +224,7 @@ $$</p>
     <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; M; ++i){
         <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; K; ++k){
             <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; N; ++j){
-                <span class="pl-c1">C</span>(i, j) += <span class="pl-c1">A</span>(i, k) * <span class="pl-c1">B</span>(k, j);
+                <span class="pl-c1">C</span>(i, j) += <span class="pl-c1">A</span>(i, k) * <span class="pl-c1">B</span>(k, j);  <span class="pl-c"><span class="pl-c">//</span> 最内侧按一个A乘以一行B得到一行C的顺序就计算</span>
             }
         }
     }
@@ -266,9 +266,14 @@ $$</p>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> BLOCK&gt;
 <span class="pl-k">void</span> <span class="pl-en">matmul_block_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* mb, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K,)
 {
-    <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; BLOCK; ++i, c+=N, a+=K){
+    <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">    * 对BLOCK内的i循环时，i移动时，c和a也要跟着移动</span>
+<span class="pl-c">    * i是逻辑计数，限制只会进行BLOCK这么多行循环</span>
+<span class="pl-c">    * 而i在逻辑上移动了行后，a和c的基址还需要再内存中移动一行</span>
+<span class="pl-c">    *<span class="pl-c">*/</span></span>
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; BLOCK; ++i, c+=N, a+=K){  
         <span class="pl-k">const</span> <span class="pl-k">double</span>* b = mb;
-        <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; BLOCK; ++k, b+=N){
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; BLOCK; ++k, b+=N){  <span class="pl-c"><span class="pl-c">//</span> 同理，k移动一列，内存b的基址也要移动一列</span>
             <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; BLOCK; ++j){
                 c[j] += a[k] * b[j];
             }
@@ -307,12 +312,12 @@ $$</p>
     <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; BLOCK; ++i, c+=N, a+=K){
         <span class="pl-k">const</span> <span class="pl-k">double</span>* b = mb;
         <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; BLOCK; ++k, b+=N){
-            __m256d a_reg = <span class="pl-c1">_mm256_broadcast_sd</span>(&amp;a[k]);
-            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; BLOCK; ++j){
-                __m256d b_reg = <span class="pl-c1">_mm256_loadu_pd</span>(&amp;b[j]);
+            __m256d a_reg = <span class="pl-c1">_mm256_broadcast_sd</span>(&amp;a[k]);  <span class="pl-c"><span class="pl-c">//</span> 将一个a广播为一个矢量</span>
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; BLOCK; j+=avx_doubles){
+                __m256d b_reg = <span class="pl-c1">_mm256_loadu_pd</span>(&amp;b[j]);  <span class="pl-c"><span class="pl-c">//</span> 加载avx_doubles个b和c进reg</span>
                 __m256d c_reg = <span class="pl-c1">_mm256_loadu_pd</span>(&amp;c[j]);
                 c_reg  = <span class="pl-c1">_mm256_fmadd_pd</span>(a_reg, b_reg, c_reg);
-                <span class="pl-c1">_mm256_storeu_pd</span>(&amp;c[j], c_reg);
+                <span class="pl-c1">_mm256_storeu_pd</span>(&amp;c[j], c_reg);  <span class="pl-c"><span class="pl-c">//</span> 将矢量乘加后的reg写回c</span>
             }
         }
     }
