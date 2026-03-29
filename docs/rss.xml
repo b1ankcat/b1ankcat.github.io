@@ -1,2 +1,53 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>Blog Title</title><link>https://Meekdai.github.io/Gmeek-template</link><description>Blog description</description><copyright>Blog Title</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://github.githubassets.com/favicons/favicon.svg</url><title>avatar</title><link>https://Meekdai.github.io/Gmeek-template</link></image><lastBuildDate>Thu, 14 Mar 2024 09:17:29 +0000</lastBuildDate><managingEditor>Blog Title</managingEditor><ttl>60</ttl><webMaster>Blog Title</webMaster><item><title>请接着之后的安装步骤执行</title><link>https://Meekdai.github.io/Gmeek-template/post/qing-jie-zhao-zhi-hou-de-an-zhuang-bu-zou-zhi-xing.html</link><description>如果你点击了`READM.md`的链接后，看到了这个页面，请继续之后的安装步骤执行。</description><guid isPermaLink="true">https://Meekdai.github.io/Gmeek-template/post/qing-jie-zhao-zhi-hou-de-an-zhuang-bu-zou-zhi-xing.html</guid><pubDate>Thu, 14 Mar 2024 09:15:10 +0000</pubDate></item><item><title>这是Gmeek模板仓库</title><link>https://Meekdai.github.io/Gmeek-template/post/zhe-shi-Gmeek-mo-ban-cang-ku.html</link><description>通过这个模板创建库，可以大大减少部署Gmeek博客的配置步骤。</description><guid isPermaLink="true">https://Meekdai.github.io/Gmeek-template/post/zhe-shi-Gmeek-mo-ban-cang-ku.html</guid><pubDate>Wed, 20 Dec 2023 07:42:24 +0000</pubDate></item></channel></rss>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>Blog Title</title><link>https://b1ankcat.github.io</link><description>Blog description</description><copyright>Blog Title</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://github.githubassets.com/favicons/favicon.svg</url><title>avatar</title><link>https://b1ankcat.github.io</link></image><lastBuildDate>Sun, 29 Mar 2026 02:13:20 +0000</lastBuildDate><managingEditor>Blog Title</managingEditor><ttl>60</ttl><webMaster>Blog Title</webMaster><item><title>矩阵乘法深入优化</title><link>https://b1ankcat.github.io/post/ju-zhen-cheng-fa-shen-ru-you-hua.html</link><description>### 矩阵setup
+
+1. std::vector&lt;double&gt;并且对齐64 bytes的cpu cache
+2. 行优先存储
+3. shape为2880 x 2880
+4. 大小为63 MB，大于L3 cache size (6 MB)
+5. 峰值算力公式如下:
+
+$$
+\text{FLOPS} = \text{cores} \times \frac{\text{cycles}}{\text{seconds}} \times \frac{\text{FLOPs}}{\text{cycles}}
+$$
+
+---
+### 朴素c++实现
+
+```c++
+void matmulNaive(const Matrix&lt;double&gt;&amp; A, const Matrix&lt;double&gt;&amp; B, const Matrix&lt;double&gt;&amp; C)
+{
+    auto M = A.row();
+    auto K = A.col();
+    auto N = B.col();
+    for (int i = 0; i &lt; M; ++i){
+        for (int j = 0; i &lt; N; ++j){
+            for (int k = 0; k &lt; K; ++k){
+                C(i, j) += A(i, k) * B(k, j);
+            }
+        }
+    }
+}
+```
+
+&lt;img width='897' height='236' alt='Image' src='https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953' /&gt;
+
+---
+### 改变循环顺序
+
+```c++
+void matmulChangeLoopOrder(const Matrix&lt;double&gt;&amp; A, const Matrix&lt;double&gt;&amp; B, const Matrix&lt;double&gt;&amp; C)
+{
+    auto M = A.row();
+    auto K = A.col();
+    auto N = B.col();
+    for (int i = 0; i &lt; M; ++i){
+        for (int k = 0; k &lt; K; ++k){
+            for (int j = 0; j &lt; N; ++j){
+                C(i, j) += A(i, k) * B(k, j);
+            }
+        }
+    }
+}
+```
+在 i-j-k 顺序下，内层循环对矩阵 B 的访问是大Strided的，会导致极差的空间局部性并浪费 Cache Line。</description><guid isPermaLink="true">https://b1ankcat.github.io/post/ju-zhen-cheng-fa-shen-ru-you-hua.html</guid><pubDate>Sun, 29 Mar 2026 02:12:49 +0000</pubDate></item></channel></rss>
