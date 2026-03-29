@@ -483,7 +483,7 @@ $$</p>
 <p>彻底展开最内层循环，消除循环的分支跳转开销。展开后的长指令流使得编译器能拥有更大的指令窗口，从而进行更好的指令调度，提升指令级并行度（ILP）。为了避免手写大量展开代码丧失灵活性，利用std::make_index_sequence 与折叠表达式可以在编译期动态生成展开后的汇编代码。</p>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-c"><span class="pl-c">/*</span>* 计算循环展开 *<span class="pl-c">*/</span></span>
 <span class="pl-k">template</span>&lt;<span class="pl-k">typename</span> T, <span class="pl-c1">size_t</span>... J&gt;
-<span class="pl-k">void</span> <span class="pl-en">compute_row</span>(<span class="pl-k">const</span> simd&lt;T&gt;&amp; a, <span class="pl-k">const</span> simd&lt;T&gt;&amp; b, <span class="pl-k">const</span> simd&lt;T&gt;&amp; r, std::index_sequence&lt;J...&gt;)
+<span class="pl-k">void</span> <span class="pl-en">compute_row</span>(<span class="pl-k">const</span> simd&lt;T&gt;&amp; a, <span class="pl-k">const</span> simd&lt;T&gt;* b, simd&lt;T&gt;* r, std::index_sequence&lt;J...&gt;)
 {
     (..., (r[J] += a * b[J]));
 }
@@ -502,34 +502,34 @@ $$</p>
 <span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Nrs, <span class="pl-k">typename</span> T&gt;
 <span class="pl-k">void</span> <span class="pl-en">compute_kernel</span>(<span class="pl-k">const</span> T* a, <span class="pl-k">const</span> T* b, simd&lt;T&gt;* r)
 {
-    <span class="pl-c1">compute_kernel</span>(a, b, r,std::make_index_sequence&lt;Mr&gt;{}, std::make_index_sequence&lt;Nrs&gt;{});
+    <span class="pl-c1">compute_kernel</span>(a, b, r, std::make_index_sequence&lt;Mr&gt;{}, std::make_index_sequence&lt;Nrs&gt;{});
 }
 
 <span class="pl-c"><span class="pl-c">/*</span>* 读写循环展开 *<span class="pl-c">*/</span></span>
-<span class="pl-k">template</span>&lt;<span class="pl-c1">soze_t</span> RowIdx, <span class="pl-k">typename</span> T, <span class="pl-k">int</span> WIDTH, <span class="pl-c1">size_t</span>... I&gt;
+<span class="pl-k">template</span>&lt;<span class="pl-c1">size_t</span> RowIdx, <span class="pl-k">typename</span> T, <span class="pl-k">int</span> WIDTH, <span class="pl-c1">size_t</span>... I&gt;
 <span class="pl-k">void</span> <span class="pl-en">store_row</span>(T* c, simd&lt;T, WIDTH&gt;* r, std::index_sequence&lt;I...&gt;)
 {
     (..., (<span class="pl-c1">load_inc_store</span>(&amp;c[I * WIDTH], r[RowIdx * <span class="pl-k">sizeof</span>...(I) + I])));
 }
 
-<span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nrs, <span class="pl-k">typename</span> T,<span class="pl-k">int</span> WIDTH, <span class="pl-c1">size_t</span>... RowIndices&gt;
+<span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nrs, <span class="pl-k">typename</span> T, <span class="pl-k">int</span> WIDTH, <span class="pl-c1">size_t</span>... RowIndices&gt;
 <span class="pl-k">void</span> <span class="pl-en">store_kernel</span>(T* c, simd&lt;T, WIDTH&gt;* r, <span class="pl-k">int</span> N, std::index_sequence&lt;RowIndices...&gt;)
 {
     <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> seq= std::make_index_sequence&lt;Nrs&gt;{};
     (..., (store_row&lt;RowIndices&gt;(c, r, seq), c+=N));
 }
 
-<span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Nrs, <span class="pl-k">typename</span> T&gt;
+<span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Nrs, <span class="pl-k">typename</span> T, <span class="pl-k">int</span> WIDTH&gt;
 <span class="pl-k">void</span> <span class="pl-en">store_kernel</span>(T* c, simd&lt;T, WIDTH&gt;* r, <span class="pl-k">int</span> N)
 {
-    <span class="pl-c1">store_kernel</span>(c, r, N, std::make_index_sequence&lt;Nrs&gt;{});
+    store_kernel&lt;Nrs&gt;(c, r, N, std::make_index_sequence&lt;Mr&gt;{});
 }
 
 <span class="pl-c"><span class="pl-c">/*</span>* 循环展开后的完整kernel函数 *<span class="pl-c">*/</span></span>
 <span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nr, <span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Kc, <span class="pl-k">typename</span> T&gt;
 <span class="pl-k">void</span> <span class="pl-en">matmul_unrolling_kernel</span>(<span class="pl-k">const</span> T* a, <span class="pl-k">const</span> T* b, T* c, <span class="pl-k">int</span> N)
 {
-    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> num_of_elems_in_reg = stdx::simd_size_v&lt;T, stdx::simd_abi:native&lt;T&gt;&gt;;
+    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> num_of_elems_in_reg = stdx::simd_size_v&lt;T, stdx::simd_abi::native&lt;T&gt;&gt;;
     <span class="pl-k">constexpr</span> <span class="pl-k">int</span> Nrs{Nr / num_of_elems_in_reg };
     <span class="pl-c1">static_assert</span>(Nr % num_of_elems_in_reg == <span class="pl-c1">0</span>, <span class="pl-s"><span class="pl-pds">"</span>Nr must be divisible by num_of_elems_in_reg <span class="pl-pds">"</span></span>);
     
@@ -544,10 +544,8 @@ $$</p>
 <h3>10. 预取</h3>
 <p>在代码中手动插入预取指令，提前将下一轮所需的 Cache Line 取入缓存，用来掩盖内存访问延迟。尽管硬件预取已经很强，但对于跨步距的矩阵 C 写入，显式软件预取仍带来了小幅性能提升。</p>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-en">__mm_prefetch</span>(c, _MM_HINT_NTA);</pre></div>
-<p><strong>最终结果</strong> 性能相比Naive实现提升了约452.4倍。</p>
-<hr>
-<h3>11. OpenBlas标准性能</h3>
-<p>OpenBlas的标准性能为Naive实现的约490.3倍。可以看到，OpenBlas的优化真的很厉害。</p></div>
+<p><strong>最终结果</strong> 性能相比Naive实现提升了约452.4倍。<br>
+与OpenBlas相比，OpenBlas的为Naive实现的约490.3倍。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
