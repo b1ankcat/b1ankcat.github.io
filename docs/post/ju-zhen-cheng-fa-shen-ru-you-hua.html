@@ -261,7 +261,42 @@ $$</p>
             }
         }
     }
-}</pre></div></div>
+}</pre></div>
+<p>将块外循环和块内循环分离：</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> BLOCK&gt;
+<span class="pl-k">void</span> <span class="pl-en">matmul_block_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* mb, <span class="pl-k">const</span> <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K,)
+{
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; BLOCK; ++i, c+=N, a+=K){
+        <span class="pl-k">const</span> <span class="pl-k">double</span>* b = mb;
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; BLOCK; ++k, b+=N){
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; BLOCK; ++j){
+                <span class="pl-c1">c</span>(j) += <span class="pl-c1">a</span>(k) * <span class="pl-c1">b</span>(j);
+            }
+        }
+    }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">matmulTiling</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
+{
+    <span class="pl-k">auto</span> M = A.<span class="pl-c1">row</span>();
+    <span class="pl-k">auto</span> K = A.<span class="pl-c1">col</span>();
+    <span class="pl-k">auto</span> N = B.<span class="pl-c1">col</span>();
+    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> BLOCK = <span class="pl-c1">64</span>;
+    
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> ib = <span class="pl-c1">0</span>; ib &lt; M; ib += BLOCK){
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> kb = <span class="pl-c1">0</span>; kb &lt; K; kb += BLOCK){
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> jb = <span class="pl-c1">0</span>; jb &lt; N; jb += BLOCK){
+                <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;<span class="pl-c1">A</span>(ib, kb);
+                <span class="pl-k">const</span> <span class="pl-k">double</span>* mb = &amp;<span class="pl-c1">B</span>(kb, jb);
+                <span class="pl-k">double</span>* c = &amp;<span class="pl-c1">C</span>(ib, jb);
+                matmul_block_kernel&lt;BLOCK &gt;(a, mb, c, N, K);
+            }
+        }
+    }
+}</pre></div>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/58ab61c1-c7f8-4f20-a3c4-3fe4c24f75ff"><img width="426" height="491" alt="Image" src="https://github.com/user-attachments/assets/58ab61c1-c7f8-4f20-a3c4-3fe4c24f75ff" style="max-width: 100%; height: auto; max-height: 491px;"></a></p>
+<p>通过增加数据的复用率来突破Memory Wall，大幅提升Arithmetic Intensit.</p>
+<p><strong>最终结果</strong> 性能相比Naive实现提升了约38.9倍。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
