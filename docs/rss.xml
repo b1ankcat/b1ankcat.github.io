@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>RaspCat Home</title><link>https://b1ankcat.github.io</link><description>live for life</description><copyright>RaspCat Home</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://github.githubassets.com/favicons/favicon.svg</url><title>avatar</title><link>https://b1ankcat.github.io</link></image><lastBuildDate>Sun, 29 Mar 2026 07:55:12 +0000</lastBuildDate><managingEditor>RaspCat Home</managingEditor><ttl>60</ttl><webMaster>RaspCat Home</webMaster><item><title>矩阵乘法深入优化</title><link>https://b1ankcat.github.io/post/ju-zhen-cheng-fa-shen-ru-you-hua.html</link><description>### 矩阵setup
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>RaspCat Home</title><link>https://b1ankcat.github.io</link><description>live for life</description><copyright>RaspCat Home</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://github.githubassets.com/favicons/favicon.svg</url><title>avatar</title><link>https://b1ankcat.github.io</link></image><lastBuildDate>Sun, 29 Mar 2026 08:21:40 +0000</lastBuildDate><managingEditor>RaspCat Home</managingEditor><ttl>60</ttl><webMaster>RaspCat Home</webMaster><item><title>矩阵乘法深入优化</title><link>https://b1ankcat.github.io/post/ju-zhen-cheng-fa-shen-ru-you-hua.html</link><description>### 矩阵setup
 
 1. std::vector&lt;double&gt;并且对齐64 bytes的cpu cache
 2. 行优先存储
@@ -21,7 +21,7 @@ void matmul_naive(const Matrix&lt;double&gt;&amp; A, const Matrix&lt;double&gt;&
     auto K = A.col();
     auto N = B.col();
     for (int i = 0; i &lt; M; ++i){
-        for (int j = 0; i &lt; N; ++j){
+        for (int j = 0; j &lt; N; ++j){
             for (int k = 0; k &lt; K; ++k){
                 C(i, j) += A(i, k) * B(k, j);  // 最内侧按一行A乘以一列B得到一个C的顺序就计算
             }
