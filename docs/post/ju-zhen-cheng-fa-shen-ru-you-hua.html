@@ -248,7 +248,7 @@ $$</p>
             <span class="pl-k">for</span> (<span class="pl-k">int</span> jb = <span class="pl-c1">0</span>; jb &lt; N; jb += BLOCK){
                 <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;<span class="pl-c1">A</span>(ib, kb);
                 <span class="pl-k">const</span> <span class="pl-k">double</span>* mb = &amp;<span class="pl-c1">B</span>(kb, jb);
-                <span class="pl-k">double</span>*           c = &amp;<span class="pl-c1">C</span>(ib, jb);
+                <span class="pl-k">double</span>*       c = &amp;<span class="pl-c1">C</span>(ib, jb);
                 
                 <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; BLOCK; ++i, c+=N, a+=K){
                     <span class="pl-k">const</span> <span class="pl-k">double</span>* b = mb;
@@ -293,7 +293,7 @@ $$</p>
             <span class="pl-k">for</span> (<span class="pl-k">int</span> jb = <span class="pl-c1">0</span>; jb &lt; N; jb += BLOCK){
                 <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;<span class="pl-c1">A</span>(ib, kb);
                 <span class="pl-k">const</span> <span class="pl-k">double</span>* mb = &amp;<span class="pl-c1">B</span>(kb, jb);
-                <span class="pl-k">double</span>*           c = &amp;<span class="pl-c1">C</span>(ib, jb);
+                <span class="pl-k">double</span>*       c = &amp;<span class="pl-c1">C</span>(ib, jb);
                 matmul_block_kernel&lt;BLOCK&gt;(a, mb, c, N, K);
             }
         }
@@ -355,17 +355,28 @@ $$</p>
 <span class="pl-c">    *<span class="pl-c">*/</span></span>
     <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> Mc = <span class="pl-c1">180</span>, Nc = <span class="pl-c1">96</span>, Kc = <span class="pl-c1">240</span>, Nr = <span class="pl-c1">12</span>, Mr = <span class="pl-c1">4</span>;
     
+    <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">    * 前三层循环先用Nc, Mc, Kc替换掉BLOCK</span>
+<span class="pl-c">    * 这样可以让L2和L3 Cache保存最大的矩阵块</span>
+<span class="pl-c">    *<span class="pl-c">*/</span></span>
     <span class="pl-k">for</span> (<span class="pl-k">int</span> ib = <span class="pl-c1">0</span>; ib &lt; M; ib += Mc){
         <span class="pl-k">for</span> (<span class="pl-k">int</span> kb = <span class="pl-c1">0</span>; kb &lt; K; kb += Kc){
             <span class="pl-k">for</span> (<span class="pl-k">int</span> jb = <span class="pl-c1">0</span>; jb &lt; N; jb += Nc){
                 <span class="pl-k">const</span> <span class="pl-k">double</span>* ma = &amp;<span class="pl-c1">A</span>(ib, kb);
                 <span class="pl-k">const</span> <span class="pl-k">double</span>* mb = &amp;<span class="pl-c1">B</span>(kb, jb);
-                <span class="pl-k">double</span>*           mc = &amp;<span class="pl-c1">C</span>(ib, jb);
+                <span class="pl-k">double</span>*       mc = &amp;<span class="pl-c1">C</span>(ib, jb);
+                <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">                * 进一步将 Cache 块细分为更小的 Register Block, 大小为 Mr x Nr</span>
+<span class="pl-c">                * 存储C矩阵需要 Mr x (Nr / 4) 个寄存器</span>
+<span class="pl-c">                * 加载B矩阵需要 Nr / 4 个寄存器</span>
+<span class="pl-c">                * 广播 A 元素需要1个寄存器</span>
+<span class="pl-c">                * 当寄存器总数为16时，Mr = 4, Nr = 12</span>
+<span class="pl-c">                *<span class="pl-c">*/</span></span>
                 <span class="pl-k">for</span> (<span class="pl-k">int</span> i2 = <span class="pl-c1">0</span>; i2 &lt; Mc; i2+=Mr){
                     <span class="pl-k">for</span> (<span class="pl-k">int</span> j2 = <span class="pl-c1">0</span>; j2 &lt; Nc; j2+=Nr){
-                        <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;ma[i2 * K];
-                        <span class="pl-k">const</span> <span class="pl-k">double</span>* b = &amp;mb[j2];
-                        <span class="pl-k">double</span>*           c = &amp;mc[i2 * N + j2];
+                        <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;ma[i2 * K];  <span class="pl-c"><span class="pl-c">//</span> ma的基地址加上已经移动到第i2行，每行K个元素</span>
+                        <span class="pl-k">const</span> <span class="pl-k">double</span>* b = &amp;mb[j2];  <span class="pl-c"><span class="pl-c">//</span> mb向右移动j2列</span>
+                        <span class="pl-k">double</span>*       c = &amp;mc[i2 * N + j2];  <span class="pl-c"><span class="pl-c">//</span> mc既要移动行，也要移动列</span>
                         matmul_cache_block_kernel&lt;Nr, Mr, Kc, Nc&gt;(a, b, c, N, K);
                     }
                 }
@@ -381,12 +392,20 @@ $$</p>
 <span class="pl-k">void</span> <span class="pl-en">matmul_reg_block_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* ma, <span class="pl-k">const</span> <span class="pl-k">double</span>* b, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K)
 {
     <span class="pl-k">constexpr</span> <span class="pl-k">int</span> avx_doubles = <span class="pl-c1">256</span> / (<span class="pl-k">sizeof</span>(<span class="pl-k">double</span>) * <span class="pl-c1">8</span>);
+    <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">    * std::array&lt;__m256d, CREG_CNT&gt; res 实际上是告诉编译器, </span>
+<span class="pl-c">    * 需要 CREG_CNT 个 YMM 寄存器来暂存中间结果</span>
+<span class="pl-c">    *<span class="pl-c">*/</span></span>
     <span class="pl-k">constexpr</span> <span class="pl-k">int</span> CREG_CNT{Mr * Nr / avx_doubles};
     std::array&lt;__m256d, CREG_CNT&gt; res;
     <span class="pl-k">for</span> (<span class="pl-k">int</span> idx = <span class="pl-c1">0</span>; idx &lt; CREG_CNT; ++idx){
         res[idx] = <span class="pl-c1">__mm256_setzero_pd</span>();
     }
     
+    <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">    * 在矩阵乘法的Naive实现中，每次计算都需要访存</span>
+<span class="pl-c">    * 现在C 的计算结果始终驻留在寄存器中</span>
+<span class="pl-c">    *<span class="pl-c">*/</span></span>
     <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; Kc; ++k, b+=N){
         <span class="pl-k">const</span> <span class="pl-k">double</span>* a = ma;
         <span class="pl-k">int</span> idx = <span class="pl-c1">0</span>;
@@ -397,7 +416,10 @@ $$</p>
             }
         }
     }
-    
+
+   <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">    * 现在才开始批量写回内存</span>
+<span class="pl-c">    *<span class="pl-c">*/</span></span> 
     <span class="pl-k">int</span> idx = <span class="pl-c1">0</span>;
     <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i, c+=N){
         <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; Nr; j+=avx_doubles, ++idx){
@@ -433,6 +455,11 @@ $$</p>
         res[idx] = <span class="pl-c1">__mm256_setzero_pd</span>();
     }
     
+   <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">    * 原本属于A矩阵不同列的元素已经成为连续存储的块, </span>
+<span class="pl-c">    * 其宽度正好等于寄存器的大小 Mr</span>
+<span class="pl-c">    * B矩阵同理，成为连续的块后宽度为 Nr</span>
+<span class="pl-c">    *<span class="pl-c">*/</span></span> 
     <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; Kc; ++k, b+=Nr, a+=Mr){
         <span class="pl-k">int</span> idx = <span class="pl-c1">0</span>;
         <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i){
@@ -447,6 +474,58 @@ $$</p>
     <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i, c+=N){
         <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; Nr; j+=avx_doubles, ++idx){
             <span class="pl-c1">load_inc_store_double</span>(&amp;c[j], res[idx]);
+        }
+    }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">matmul_packing_tiling</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
+{
+    <span class="pl-k">auto</span> M = A.<span class="pl-c1">row</span>();
+    <span class="pl-k">auto</span> K = A.<span class="pl-c1">col</span>();
+    <span class="pl-k">auto</span> N = B.<span class="pl-c1">col</span>();
+    <span class="pl-k">constexpr</span> <span class="pl-k">auto</span> Mc = <span class="pl-c1">180</span>, Nc = <span class="pl-c1">96</span>, Kc = <span class="pl-c1">240</span>, Nr = <span class="pl-c1">12</span>, Mr = <span class="pl-c1">4</span>;
+
+   <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">    * 分配连续的 Buffer，用于存放当前 Cache Block 的数据</span>
+<span class="pl-c">    *<span class="pl-c">*/</span></span> 
+    std::vector&lt;<span class="pl-k">double</span>&gt; <span class="pl-c1">a_buffer</span>(Mc * Kc), <span class="pl-c1">b_buffer</span>(Kc * Nc);
+
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> ib = <span class="pl-c1">0</span>; ib &lt; M; ib += Mc) {
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> kb = <span class="pl-c1">0</span>; kb &lt; K; kb += Kc) {
+            <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">            * 将 A 的子块 (Mc x Kc) 复制到连续内存, 确保 Mr 维度的元素连续</span>
+<span class="pl-c">            *<span class="pl-c">*/</span></span> 
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> i2 = <span class="pl-c1">0</span>; i2 &lt; Mc; i2 += Mr) {
+                <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; Kc; ++k) {
+                    <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; Mr; ++i) {
+                        a_buffer[(i2 * Kc) + (k * Mr) + i] = <span class="pl-c1">A</span>(ib + i2 + i, kb + k);
+                    }
+                }
+            }
+            
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> jb = <span class="pl-c1">0</span>; jb &lt; N; jb += Nc) {
+                <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">                * 将 B 的子块 (Kc x Nc) 复制到连续内存, 确保 Nr 维度的元素连续</span>
+<span class="pl-c">                *<span class="pl-c">*/</span></span> 
+                <span class="pl-k">for</span> (<span class="pl-k">int</span> j2 = <span class="pl-c1">0</span>; j2 &lt; Nc; j2 += Nr) {
+                    <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; Kc; ++k) {
+                        <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; Nr; ++j) {
+                            b_buffer[(j2 * Kc) + (k * Nr) + j] = <span class="pl-c1">B</span>(kb + k, jb + j2 + j);
+                        }
+                    }
+                }
+
+                <span class="pl-k">for</span> (<span class="pl-k">int</span> i2 = <span class="pl-c1">0</span>; i2 &lt; Mc; i2 += Mr) {
+                    <span class="pl-k">for</span> (<span class="pl-k">int</span> j2 = <span class="pl-c1">0</span>; j2 &lt; Nc; j2 += Nr) {
+                        <span class="pl-c"><span class="pl-c">//</span> 指向 Packing 后的连续内存地址</span>
+                        <span class="pl-k">const</span> <span class="pl-k">double</span>* a = &amp;a_buffer[i2 * Kc];
+                        <span class="pl-k">const</span> <span class="pl-k">double</span>* b = &amp;b_buffer[j2 * Kc];
+                        <span class="pl-c"><span class="pl-c">//</span> C 矩阵通常不进行 Packing，直接更新原内存以减少开销</span>
+                        <span class="pl-k">double</span>* c = &amp;<span class="pl-c1">C</span>(ib + i2, jb + j2);
+                        matmul_reg_block_reordered_kernel&lt;Nr, Mr, Kc&gt;(a, b, c, N);
+                    }
+                }
+            }
         }
     }
 }</pre></div>
@@ -485,6 +564,16 @@ $$</p>
 <span class="pl-k">template</span>&lt;<span class="pl-k">typename</span> T, <span class="pl-c1">size_t</span>... J&gt;
 <span class="pl-k">void</span> <span class="pl-en">compute_row</span>(<span class="pl-k">const</span> simd&lt;T&gt;&amp; a, <span class="pl-k">const</span> simd&lt;T&gt;* b, simd&lt;T&gt;* r, std::index_sequence&lt;J...&gt;)
 {
+    <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">    * 1. 这行代码在编译时会被展开为J行指令, </span>
+<span class="pl-c">    *     从根本上消除了循环计数器自增指令和条件跳转指令, </span>
+<span class="pl-c">    *     指令流是完全线性的, 指令分发器可以看到后续数十条互不相关的 FMA 指令。</span>
+<span class="pl-c">    * 2. 展开后, r[0], r[1], r[2]... 对应不同的 SIMD 寄存器, </span>
+<span class="pl-c">    *     现代 CPU 的指令发射队列可以同时执行这些 FMA 指令。</span>
+<span class="pl-c">    * 3. 因为 J 是编译期常量，b[J * size] 这种地址偏移在编译阶段就计算完成, </span>
+<span class="pl-c">    *     最终汇编直接体现为 [rax + 64] 这种立即数偏移形式, </span>
+<span class="pl-c">    *     节省了运行时的乘法和加法开销。</span>
+<span class="pl-c">    *<span class="pl-c">*/</span></span> 
     (..., (r[J] += a * b[J]));
 }
 
@@ -509,6 +598,11 @@ $$</p>
 <span class="pl-k">template</span>&lt;<span class="pl-c1">size_t</span> RowIdx, <span class="pl-k">typename</span> T, <span class="pl-k">int</span> WIDTH, <span class="pl-c1">size_t</span>... I&gt;
 <span class="pl-k">void</span> <span class="pl-en">store_row</span>(T* c, simd&lt;T, WIDTH&gt;* r, std::index_sequence&lt;I...&gt;)
 {
+    <span class="pl-c"><span class="pl-c">/*</span>* </span>
+<span class="pl-c">    * 编译器明确知道 r[0], r[1], r[2]... 是独立的存储位置,</span>
+<span class="pl-c">    * 从而大胆进行指令重排, 将 Load 指令尽可能的提前, </span>
+<span class="pl-c">    * 这样可以掩盖内存延迟。</span>
+<span class="pl-c">    *<span class="pl-c">*/</span></span>
     (..., (<span class="pl-c1">load_inc_store</span>(&amp;c[I * WIDTH], r[RowIdx * <span class="pl-k">sizeof</span>...(I) + I])));
 }
 
