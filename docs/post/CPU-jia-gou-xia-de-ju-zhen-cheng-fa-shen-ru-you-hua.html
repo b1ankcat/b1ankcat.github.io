@@ -10,7 +10,10 @@
         let theme = localStorage.getItem("meek_theme") || "light";
         document.documentElement.setAttribute("data-color-mode", theme);
     </script>
-<meta name="description" content="### 矩阵setup
+<meta name="description" content="### **本文是CppCon演讲《Matrix Multiplication Deep Dive》的文字整理和一些自己的理解**
+
+---
+### 矩阵setup
 
 1. std::vector<double>并且对齐64 bytes的cpu cache
 2. 行优先存储
@@ -64,7 +67,10 @@ void matmul_change_order(const Matrix<double>& A, const Matrix<double>& B, const
 
 在 **i-j-k** 顺序下，在最内层的循环中，可以看到对 **A(i, k)** 的访问是连续的，但是 **B(k, j)** 的访问会有一个 **j** 大小的Strided。">
 <meta property="og:title" content="CPU架构下的矩阵乘法深入优化">
-<meta property="og:description" content="### 矩阵setup
+<meta property="og:description" content="### **本文是CppCon演讲《Matrix Multiplication Deep Dive》的文字整理和一些自己的理解**
+
+---
+### 矩阵setup
 
 1. std::vector<double>并且对齐64 bytes的cpu cache
 2. 行优先存储
@@ -187,7 +193,9 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </div>
 </div>
     <div id="content">
-<div class="markdown-body" id="postBody"><h3>矩阵setup</h3>
+<div class="markdown-body" id="postBody"><h3><strong>本文是CppCon演讲《Matrix Multiplication Deep Dive》的文字整理和一些自己的理解</strong></h3>
+<hr>
+<h3>矩阵setup</h3>
 <ol>
 <li>std::vector并且对齐64 bytes的cpu cache</li>
 <li>行优先存储</li>

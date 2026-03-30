@@ -1,3 +1,6 @@
+### **本文是CppCon演讲《Matrix Multiplication Deep Dive》的文字整理和一些自己的理解**
+
+---
 ### 矩阵setup
 
 1. std::vector<double>并且对齐64 bytes的cpu cache
