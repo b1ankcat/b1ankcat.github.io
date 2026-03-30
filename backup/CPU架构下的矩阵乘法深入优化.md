@@ -25,7 +25,7 @@ void matmul_naive(const Matrix<double>& A, const Matrix<double>& B, const Matrix
     for (int i = 0; i < M; ++i){
         for (int j = 0; j < N; ++j){
             for (int k = 0; k < K; ++k){
-                C(i, j) += A(i, k) * B(k, j);  // 最内侧按一行A乘以一列B得到一个C的顺序就计算
+                C(i, j) += A(i, k) * B(k, j);  // 最内层按一行A乘以一列B得到一个C的顺序计算
             }
         }
     }
@@ -46,7 +46,7 @@ void matmul_change_order(const Matrix<double>& A, const Matrix<double>& B, const
     for (int i = 0; i < M; ++i){
         for (int k = 0; k < K; ++k){
             for (int j = 0; j < N; ++j){
-                C(i, j) += A(i, k) * B(k, j);  // 最内侧按一个A乘以一行B得到一行C的顺序就计算
+                C(i, j) += A(i, k) * B(k, j);  // 最内层按一个A乘以一行B得到一行C的顺序计算
             }
         }
     }
