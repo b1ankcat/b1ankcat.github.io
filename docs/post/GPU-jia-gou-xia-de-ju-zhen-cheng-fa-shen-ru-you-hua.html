@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    <script src='https://blog.meekdai.com/Gmeek/plugins/GmeekVercount.js'></script>
+    <link rel="icon" href="https://github.githubassets.com/favicons/favicon.svg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="### 矩阵setup
+
+1. 使用NVIDIA V100S-PCIE-32GB测试
+2. 行优先存储
+3. shape为4096 x 4096
+4. 大小为 128 MB，远大于shared memory
+5. A矩阵为m行k列，B矩阵为k行n列，矩阵乘的结果C矩阵为m行n列
+6. 峰值算力公式为 FP32-15.7 TFLOPS，FP16-125 TFLOPS
+
+---
+### 0. 朴素矩阵乘kernel实现
+
+```cu
+__global__ void NaiveGemmKernel(const float* a, const float* b, float* c, int m, int n, int k) {
+    uint32_t row = blockIdx.x * blockDim.x + threadIdx.x;
+    uint32_t col = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (row < m && col < n) {
+        float tmp = 0.0f;
+        for (uint32_t i = 0; i < k; i++) {
+            tmp += a[row * k + i] * b[i * n + col];
+        }
+
+        c[row * n + col] = tmp;
+    }
+}
+
+void LaunchNaiveGemm(const float* a, const float* b, float* c, int m, int n, int k, cudaStream_t stream) {
+  constexpr int kBlockX = 32;
+  constexpr int kBlockY = 32;
+
+  const dim3 block(kBlockX, kBlockY);
+  const dim3 grid((m + kBlockX - 1) / kBlockX, (n + kBlockY - 1) / kBlockY);
+
+  NaiveGemmKernel<<<grid, block, 0, stream>>>(a, b, c, m, n, k);
+  CUDA_CHECK(cudaPeekAtLastError());
+}
+```
+
+注意，在这里使用了行m为BlockX，列n为BlockY，因此是对m和n进行了并行，对每个thread只需要考虑计算k即可，并且BlockX是threadIdx中优先变化的，当x变化到blockDim-1时，y才会加1，也就是对二维并行来说变化效果是(0,0),(1,0),...,(m,0),(0,1),(1,1),...,(m,1),...。">
+<meta property="og:title" content="GPU架构下的矩阵乘法深入优化">
+<meta property="og:description" content="### 矩阵setup
+
+1. 使用NVIDIA V100S-PCIE-32GB测试
+2. 行优先存储
+3. shape为4096 x 4096
+4. 大小为 128 MB，远大于shared memory
+5. A矩阵为m行k列，B矩阵为k行n列，矩阵乘的结果C矩阵为m行n列
+6. 峰值算力公式为 FP32-15.7 TFLOPS，FP16-125 TFLOPS
+
+---
+### 0. 朴素矩阵乘kernel实现
+
+```cu
+__global__ void NaiveGemmKernel(const float* a, const float* b, float* c, int m, int n, int k) {
+    uint32_t row = blockIdx.x * blockDim.x + threadIdx.x;
+    uint32_t col = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (row < m && col < n) {
+        float tmp = 0.0f;
+        for (uint32_t i = 0; i < k; i++) {
+            tmp += a[row * k + i] * b[i * n + col];
+        }
+
+        c[row * n + col] = tmp;
+    }
+}
+
+void LaunchNaiveGemm(const float* a, const float* b, float* c, int m, int n, int k, cudaStream_t stream) {
+  constexpr int kBlockX = 32;
+  constexpr int kBlockY = 32;
+
+  const dim3 block(kBlockX, kBlockY);
+  const dim3 grid((m + kBlockX - 1) / kBlockX, (n + kBlockY - 1) / kBlockY);
+
+  NaiveGemmKernel<<<grid, block, 0, stream>>>(a, b, c, m, n, k);
+  CUDA_CHECK(cudaPeekAtLastError());
+}
+```
+
+注意，在这里使用了行m为BlockX，列n为BlockY，因此是对m和n进行了并行，对每个thread只需要考虑计算k即可，并且BlockX是threadIdx中优先变化的，当x变化到blockDim-1时，y才会加1，也就是对二维并行来说变化效果是(0,0),(1,0),...,(m,0),(0,1),(1,1),...,(m,1),...。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://b1ankcat.github.io/post/GPU-jia-gou-xia-de-ju-zhen-cheng-fa-shen-ru-you-hua.html">
+<meta property="og:image" content="https://github.githubassets.com/favicons/favicon.svg">
+<title>GPU架构下的矩阵乘法深入优化</title>
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+.copy-feedback {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 50px;
+    color: var(--color-fg-on-emphasis);
+    background-color: var(--color-fg-muted);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+}
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">GPU架构下的矩阵乘法深入优化</h1>
+<div class="title-right">
+    <a href="https://b1ankcat.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/b1ankcat/b1ankcat.github.io/issues/2" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><h3>矩阵setup</h3>
+<ol>
+<li>使用NVIDIA V100S-PCIE-32GB测试</li>
+<li>行优先存储</li>
+<li>shape为4096 x 4096</li>
+<li>大小为 128 MB，远大于shared memory</li>
+<li>A矩阵为m行k列，B矩阵为k行n列，矩阵乘的结果C矩阵为m行n列</li>
+<li>峰值算力公式为 FP32-15.7 TFLOPS，FP16-125 TFLOPS</li>
+</ol>
+<hr>
+<h3>0. 朴素矩阵乘kernel实现</h3>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">NaiveGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* a, <span class="pl-k">const</span> <span class="pl-k">float</span>* b, <span class="pl-k">float</span>* c, <span class="pl-k">int</span> m, <span class="pl-k">int</span> n, <span class="pl-k">int</span> k) {
+    <span class="pl-c1">uint32_t</span> row = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">x</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
+    <span class="pl-c1">uint32_t</span> col = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">y</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span>;
+
+    <span class="pl-k">if</span> (row &lt; m &amp;&amp; col &lt; n) {
+        <span class="pl-k">float</span> tmp = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; k; i++) {
+            tmp += a[row * k + i] * b[i * n + col];
+        }
+
+        c[row * n + col] = tmp;
+    }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">LaunchNaiveGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* a, <span class="pl-k">const</span> <span class="pl-k">float</span>* b, <span class="pl-k">float</span>* c, <span class="pl-k">int</span> m, <span class="pl-k">int</span> n, <span class="pl-k">int</span> k, cudaStream_t stream) {
+  <span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">kBlockX</span> = <span class="pl-c1">32</span>;
+  <span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">kBlockY</span> = <span class="pl-c1">32</span>;
+
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(<span class="pl-c1">kBlockX</span>, <span class="pl-c1">kBlockY</span>);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((m + <span class="pl-c1">kBlockX</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">kBlockX</span>, (n + <span class="pl-c1">kBlockY</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">kBlockY</span>);
+
+  NaiveGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(a, b, c, m, n, k);
+  <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
+}</pre></div>
+<p>注意，在这里使用了行m为BlockX，列n为BlockY，因此是对m和n进行了并行，对每个thread只需要考虑计算k即可，并且BlockX是threadIdx中优先变化的，当x变化到blockDim-1时，y才会加1，也就是对二维并行来说变化效果是(0,0),(1,0),...,(m,0),(0,1),(1,1),...,(m,1),...。</p>
+<p>对每个(x,y)坐标对来说，都需要在内部循环计算k，比如需要计算从(x, 0)到(x, k)和(0, y)到(k, y)的乘加，当计算完内部的k循环后，x加1，变成计算从(x+1, 0)到(x+1, k)和(0, y)到(k, y)的乘加，这个过程中x从0到m的计算，y都是不变的，索引变化如图。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/92d04125-9fa4-471f-b02e-01607b2def59"><img width="812" height="708" alt="Image" src="https://github.com/user-attachments/assets/92d04125-9fa4-471f-b02e-01607b2def59" style="max-width: 100%; height: auto; max-height: 708px;"></a></p>
+<p>一定要记住 <strong>GPU是并行</strong> 的，可以这么理解，GPU的 $m \times n$ 个线程在同一时刻完成了K循环的同一步，K循环是一个时间的步数，每一步里都有$m \times k$ 个线程在访存和运算。</p>
+<p>因此这个时刻对A矩阵来说就是获取了从(0,k)到(m,k)的一列数据，一列数据需要访存m次，一共k列，就是 $m \times k$ 次访存，这个时刻对B矩阵来说就是获取了(k,y)这一个数据，一共需要访问k行，就是 $k$ 次访存。A矩阵和B矩阵加起来进行了 $k + m \times k$ 次访存。</p>
+<p><strong>最终结果</strong>  245 GFLOPS，约为cuBlas的1/50。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/7561f6f6-6e18-49cf-9f2a-3f5a3316e908"><img width="589" height="212" alt="Image" src="https://github.com/user-attachments/assets/7561f6f6-6e18-49cf-9f2a-3f5a3316e908" style="max-width: 100%; height: auto; max-height: 212px;"></a></p>
+<hr>
+<h3>1. y优先kernel实现</h3>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">YfirstGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* a, <span class="pl-k">const</span> <span class="pl-k">float</span>* b, <span class="pl-k">float</span>* c, <span class="pl-k">int</span> m, <span class="pl-k">int</span> n, <span class="pl-k">int</span> k) {
+    <span class="pl-c1">uint32_t</span> col = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">x</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
+    <span class="pl-c1">uint32_t</span> row = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">y</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span>;
+
+    <span class="pl-k">if</span> (row &lt; m &amp;&amp; col &lt; n) {
+        <span class="pl-k">float</span> tmp = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; k; i++) {
+            tmp += a[row * k + i] * b[i * n + col];
+        }
+
+        c[row * n + col] = tmp;
+    }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">LaunchYfirstGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* a, <span class="pl-k">const</span> <span class="pl-k">float</span>* b, <span class="pl-k">float</span>* c, <span class="pl-k">int</span> m, <span class="pl-k">int</span> n, <span class="pl-k">int</span> k, cudaStream_t stream) {
+  <span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">kBlockX</span> = <span class="pl-c1">32</span>;
+  <span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">kBlockY</span> = <span class="pl-c1">32</span>;
+
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(<span class="pl-c1">kBlockX</span>, <span class="pl-c1">kBlockY</span>);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((n + <span class="pl-c1">kBlockX</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">kBlockX</span>, (m + <span class="pl-c1">kBlockY</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">kBlockY</span>);
+
+  YfirstGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(a, b, c, m, n, k);
+  <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
+}</pre></div>
+<p>使用列n为BlockX，行m为BlockY，这时列变成了threadIdx中优先变化的量，也就是先计算从(y, 0)到(y, k)和(0, x)到(k, x)的乘加，当计算完内部的k循环后，x加1，变成计算从(y, 0)到(y, k)和(0, x+1)到(k, x+1)的乘加，索引变化如图。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/00dcfb25-d387-4528-bd67-b4af06d85fb8"><img width="851" height="710" alt="Image" src="https://github.com/user-attachments/assets/00dcfb25-d387-4528-bd67-b4af06d85fb8" style="max-width: 100%; height: auto; max-height: 710px;"></a></p>
+<p>在这种情况下，GPU在同一时刻完成K循环的同一步，这个时刻对A矩阵来说就是获取了(y,k)这一个数据，一共需要访问m行，就是 $m$ 次访存，这个时刻对B矩阵来说就是获取了从(k,0)到(k,n)的一行数据，yfirst的 <strong>优化点</strong> 就在这，由于同一个GPU时间刻的连续SM单元在访问连续数据，因此会按warp合并访问，一次访存就可以访问32B数据即8个FP32数据，一行数据需要访存 $n \div 8$ 次，一共k行，就是 $\frac{n\times k}{8}$ 次访存。A矩阵和B矩阵加起来进行了 $m + \frac{n\times k}{8}$ 次访存。</p>
+<p>由于本示例中 $m = n = k$，因此理论上性能相比naive实现会提升8倍，同时我们还可以看到，在x增加的过程中y是不变的，因此会重复获取y索引的数据，这是下一个优化点的问题来源。</p>
+<p><strong>最终结果</strong>  1894 GFLOPS，可以看到，实际上相比naive实现提升了7.73倍，也就是约8倍。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/bee89804-f51c-4e19-8395-f7881ce6ecae"><img width="583" height="211" alt="Image" src="https://github.com/user-attachments/assets/bee89804-f51c-4e19-8395-f7881ce6ecae" style="max-width: 100%; height: auto; max-height: 211px;"></a></p></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://b1ankcat.github.io">RaspCat Home</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if("01/01/2026"!=""){
+    var startSite=new Date("01/01/2026");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行 "+diffDay+" 天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z', 'copy': 'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z', 'check': 'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.disabled=true;
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","b1ankcat/b1ankcat.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const createClipboardHTML = (codeContent, additionalClasses = '') => `
+        <pre class="notranslate"><code class="notranslate">${codeContent}</code></pre>
+        <div class="clipboard-container position-absolute right-0 top-0 ${additionalClasses}">
+            <clipboard-copy class="ClipboardButton btn m-2 p-0" role="button" style="display: inherit;">
+                <svg height="16" width="16" class="octicon octicon-copy m-2"><path d="${IconList["copy"]}"></path></svg>
+                <svg height="16" width="16" class="octicon octicon-check color-fg-success m-2 d-none"><path d="${IconList["check"]}"></path></svg>
+            </clipboard-copy>
+            <div class="copy-feedback">Copied!</div>
+        </div>
+    `;
+
+    const handleCodeElements = (selector = '') => {
+        document.querySelectorAll(selector).forEach(codeElement => {
+            const codeContent = codeElement.innerHTML;
+            const newStructure = document.createElement('div');
+            newStructure.className = 'snippet-clipboard-content position-relative overflow-auto';
+            newStructure.innerHTML = createClipboardHTML(codeContent);
+
+            const parentElement = codeElement.parentElement;
+            if (selector.includes('highlight')) {
+                parentElement.insertBefore(newStructure, codeElement.nextSibling);
+                parentElement.removeChild(codeElement);
+            } else {
+                parentElement.parentElement.replaceChild(newStructure, parentElement);
+            }
+        });
+    };
+
+    handleCodeElements('pre.notranslate > code.notranslate');
+    handleCodeElements('div.highlight > pre.notranslate');
+
+    let currentFeedback = null;
+    document.querySelectorAll('clipboard-copy').forEach(copyButton => {
+        copyButton.addEventListener('click', () => {
+            const codeContent = copyButton.closest('.snippet-clipboard-content').innerText;
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = codeContent;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempTextArea);
+
+            const copyIcon = copyButton.querySelector('.octicon-copy');
+            const checkIcon = copyButton.querySelector('.octicon-check');
+            const copyFeedback = copyButton.nextElementSibling;
+
+            if (currentFeedback && currentFeedback !== copyFeedback) {currentFeedback.style.display = 'none';}
+            currentFeedback = copyFeedback;
+
+            copyIcon.classList.add('d-none');
+            checkIcon.classList.remove('d-none');
+            copyFeedback.style.display = 'block';
+            copyButton.style.borderColor = 'var(--color-success-fg)';
+
+            setTimeout(() => {
+                copyIcon.classList.remove('d-none');
+                checkIcon.classList.add('d-none');
+                copyFeedback.style.display = 'none';
+                copyButton.style.borderColor = '';
+            }, 2000);
+        });
+    });
+});
+
+</script>
+<script src='https://blog.meekdai.com/Gmeek/plugins/articletoc.js'></script><script src='https://blog.meekdai.com/Gmeek/plugins/lightbox.js'><script>MathJax = {tex: {inlineMath: [["$", "$"]]}};</script><script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+</html>
