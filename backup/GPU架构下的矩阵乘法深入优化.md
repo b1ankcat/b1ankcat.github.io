@@ -40,7 +40,7 @@ void LaunchNaiveGemm(const float* A, const float* B, float* C, int M, int N, int
 
 <img width="812" height="708" alt="Image" src="https://github.com/user-attachments/assets/92d04125-9fa4-471f-b02e-01607b2def59" />
 
-&emsp;&emsp;一定要记住 **GPU是并行** 的，可以这么理解，GPU的 \(m \times n\( 个线程在同一时刻完成了K循环的同一步，K循环是一个时间的步数，每一步里都有 \(m \times k\( 个线程在访存和运算。
+&emsp;&emsp;一定要记住 **GPU是并行** 的，可以这么理解，GPU的 $ m \times n $ 个线程在同一时刻完成了K循环的同一步，K循环是一个时间的步数，每一步里都有 $ m \times k $个线程在访存和运算。
 
 &emsp;&emsp;因此这个时刻对A矩阵来说就是获取了从(0,k)到(m,k)的一列数据，一列数据需要访存m次，一共k列，就是 $m \times k$ 次访存，这个时刻对B矩阵来说就是获取了(k,y)这一个数据，一共需要访问k行，就是 $k$ 次访存。A矩阵和B矩阵加起来进行了 $k + m \times k$ 次访存。
 
