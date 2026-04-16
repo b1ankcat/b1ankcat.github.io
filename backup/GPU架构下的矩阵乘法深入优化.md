@@ -40,7 +40,7 @@ void LaunchNaiveGemm(const float* A, const float* B, float* C, int M, int N, int
 
 <img width="812" height="708" alt="Image" src="https://github.com/user-attachments/assets/92d04125-9fa4-471f-b02e-01607b2def59" />
 
-&emsp;&emsp;一定要记住 **GPU是并行** 的，可以这么理解，GPU的 $ m \times n $ 个线程在同一时刻完成了K循环的同一步，K循环是一个时间的步数，每一步里都有 $ m \times k $个线程在访存和运算。
+&emsp;&emsp;一定要记住 **GPU是并行** 的，可以这么理解，GPU的 $m \times n$ 个线程在同一时刻完成了K循环的同一步，K循环是一个时间的步数，每一步里都有 $m \times k$个线程在访存和运算。
 
 &emsp;&emsp;因此这个时刻对A矩阵来说就是获取了从(0,k)到(m,k)的一列数据，一列数据需要访存m次，一共k列，就是 $m \times k$ 次访存，这个时刻对B矩阵来说就是获取了(k,y)这一个数据，一共需要访问k行，就是 $k$ 次访存。A矩阵和B矩阵加起来进行了 $k + m \times k$ 次访存。
 
@@ -80,7 +80,7 @@ void LaunchYfirstGemm(const float* A, const float* B, float* C, int M, int N, in
 
 <img width="851" height="710" alt="Image" src="https://github.com/user-attachments/assets/00dcfb25-d387-4528-bd67-b4af06d85fb8" />
 
-&emsp;&emsp;在这种情况下，GPU在同一时刻完成K循环的同一步，这个时刻对A矩阵来说就是获取了(y,k)这一个数据，一共需要访问m行，就是 $m$ 次访存，这个时刻对B矩阵来说就是获取了从(k,0)到(k,n)的一行数据，yfirst的 **优化点** 就在这，由于同一个GPU时间刻的连续thread在访问连续数据，因此会按warp合并访问，一次访存就可以访问32B数据即8个FP32数据，一行数据需要访存 $n \div 8$ 次，一共k行，就是 $\frac{n\times k}{8}$ 次访存。A矩阵和B矩阵加起来进行了 $m + \frac{n\times k}{8}$ 次访存。
+&emsp;&emsp;在这种情况下，GPU在同一时刻完成K循环的同一步，这个时刻对A矩阵来说就是获取了(y,k)这一个数据，一共需要访问m行，就是 $m$ 次访存，这个时刻对B矩阵来说就是获取了从(k,0)到(k,n)的一行数据，yfirst的 **优化点** 就在这，由于同一个GPU时间刻的连续thread在访问连续数据，因此会按warp合并访问，一次访存就可以访问32B数据即8个FP32数据，一行数据需要访存 $n \div 8$ 次，一共k行，就是 $\frac{n \times k}{8}$ 次访存。A矩阵和B矩阵加起来进行了 $m + \frac{n \times k}{8}$ 次访存。
 
 &emsp;&emsp;由于本示例中 $m = n = k$，因此理论上性能相比naive实现会提升8倍，同时我们还可以看到，在x增加的过程中y是不变的，因此会重复获取y索引的数据，这是下一个优化点的问题来源。
 
@@ -147,9 +147,9 @@ void LaunchSharedGemm(const float* A, const float* B, float* C, int M, int N, in
 blockA[innerRow + innerCol] = A[blockARow * K + blockACol];
 ```
 
-&emsp;&emsp;这里只获取了一个地址的值，为什么就对整个blockA赋值完成了？原因就在于blockARow中有threadIdx.y，而blockACol中有threadIdx.x，GPU是并行的，也就是在第K个时间步中同时对 $ blockIdx.x \times threadIdx.x $ 个地址取值，那么就对整个blockA赋值了。blockB同理。
+&emsp;&emsp;这里只获取了一个地址的值，为什么就对整个blockA赋值完成了？原因就在于blockARow中有threadIdx.y，而blockACol中有threadIdx.x，GPU是并行的，也就是在第K个时间步中同时对 $blockIdx.x \times threadIdx.x$ 个地址取值，那么就对整个blockA赋值了。blockB同理。
 
-&emsp;&emsp;当进入到K+1个时间步时，A矩阵的blockARow没变，但是blockACol向右移动了整个BLOCK_SIZE，B矩阵的blockBCol没变，但是blockBRow向下移动了整个BLOCK_SIZE，此时获得的 $ blockIdx.x \times threadIdx.x $ 个地址的值覆盖了blockA和blockB，进入了下一轮计算。
+&emsp;&emsp;当进入到K+1个时间步时，A矩阵的blockARow没变，但是blockACol向右移动了整个BLOCK_SIZE，B矩阵的blockBCol没变，但是blockBRow向下移动了整个BLOCK_SIZE，此时获得的 $blockIdx.x \times threadIdx.x$ 个地址的值覆盖了blockA和blockB，进入了下一轮计算。
 
 &emsp;&emsp;回到第K个时间步，由于GPU对整个block同时取值了，那么计算也需要对整个block进行计算，计算后的值临时存储在tmp中，进行所有时间步后也就计算完毕了A的K列和B的K行数据，此时再写回C矩阵即可。
 
