@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>RaspCat Home</title><link>https://b1ankcat.github.io</link><description>live for life</description><copyright>RaspCat Home</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://github.githubassets.com/favicons/favicon.svg</url><title>avatar</title><link>https://b1ankcat.github.io</link></image><lastBuildDate>Thu, 16 Apr 2026 12:07:23 +0000</lastBuildDate><managingEditor>RaspCat Home</managingEditor><ttl>60</ttl><webMaster>RaspCat Home</webMaster><item><title>GPU架构下的矩阵乘法深入优化</title><link>https://b1ankcat.github.io/post/GPU-jia-gou-xia-de-ju-zhen-cheng-fa-shen-ru-you-hua.html</link><description>### 矩阵setup
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>RaspCat Home</title><link>https://b1ankcat.github.io</link><description>live for life</description><copyright>RaspCat Home</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://github.githubassets.com/favicons/favicon.svg</url><title>avatar</title><link>https://b1ankcat.github.io</link></image><lastBuildDate>Thu, 16 Apr 2026 13:00:18 +0000</lastBuildDate><managingEditor>RaspCat Home</managingEditor><ttl>60</ttl><webMaster>RaspCat Home</webMaster><item><title>GPU架构下的矩阵乘法深入优化</title><link>https://b1ankcat.github.io/post/GPU-jia-gou-xia-de-ju-zhen-cheng-fa-shen-ru-you-hua.html</link><description>### 矩阵setup
 
 1. 使用NVIDIA V100S-PCIE-32GB测试
 2. 行优先存储
@@ -12,30 +12,27 @@
 ### 0. 朴素矩阵乘kernel实现
 
 ```cu
-__global__ void NaiveGemmKernel(const float* a, const float* b, float* c, int m, int n, int k) {
+__global__ void NaiveGemmKernel(const float* A, const float* B, float* C, int M, int N, int K) {
     uint32_t row = blockIdx.x * blockDim.x + threadIdx.x;
     uint32_t col = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (row &lt; m &amp;&amp; col &lt; n) {
+    if (row &lt; M &amp;&amp; col &lt; N) {
         float tmp = 0.0f;
-        for (uint32_t i = 0; i &lt; k; i++) {
-            tmp += a[row * k + i] * b[i * n + col];
+        for (uint32_t i = 0; i &lt; K; i++) {
+            tmp += A[row * K + i] * B[i * N + col];
         }
 
-        c[row * n + col] = tmp;
+        C[row * N + col] = tmp;
     }
 }
 
-void LaunchNaiveGemm(const float* a, const float* b, float* c, int m, int n, int k, cudaStream_t stream) {
-  constexpr int kBlockX = 32;
-  constexpr int kBlockY = 32;
-
-  const dim3 block(kBlockX, kBlockY);
-  const dim3 grid((m + kBlockX - 1) / kBlockX, (n + kBlockY - 1) / kBlockY);
-
-  NaiveGemmKernel&lt;&lt;&lt;grid, block, 0, stream&gt;&gt;&gt;(a, b, c, m, n, k);
+void LaunchNaiveGemm(const float* A, const float* B, float* C, int M, int N, int K, cudaStream_t stream) {
+  const dim3 block(BLOCK_SIZE, BLOCK_SIZE);
+  const dim3 grid((M + BLOCK_SIZE - 1) / BLOCK_SIZE, (N + BLOCK_SIZE - 1) / BLOCK_SIZE);
+  NaiveGemmKernel&lt;&lt;&lt;grid, block, 0, stream&gt;&gt;&gt;(A, B, C, M, N, K);
   CUDA_CHECK(cudaPeekAtLastError());
 }
+
 ```
 
 注意，在这里使用了行m为BlockX，列n为BlockY，因此是对m和n进行了并行，对每个thread只需要考虑计算k即可，并且BlockX是threadIdx中优先变化的，当x变化到blockDim-1时，y才会加1，也就是对二维并行来说变化效果是(0,0),(1,0),...,(m,0),(0,1),(1,1),...,(m,1),...。</description><guid isPermaLink="true">https://b1ankcat.github.io/post/GPU-jia-gou-xia-de-ju-zhen-cheng-fa-shen-ru-you-hua.html</guid><pubDate>Thu, 16 Apr 2026 11:55:45 +0000</pubDate></item><item><title>CPU架构下的矩阵乘法深入优化</title><link>https://b1ankcat.github.io/post/CPU-jia-gou-xia-de-ju-zhen-cheng-fa-shen-ru-you-hua.html</link><description>### **本文是CppCon演讲《Matrix Multiplication Deep Dive》的文字整理和一些自己的理解**
