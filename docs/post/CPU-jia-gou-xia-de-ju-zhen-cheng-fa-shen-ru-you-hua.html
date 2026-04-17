@@ -221,7 +221,7 @@ $$</p>
         }
     }
 }</pre></div>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953"><img width="897" height="236" alt="Image" src="https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953" style="max-width: 100%; height: auto; max-height: 236px;"></a></p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953"><img width="897" height="236" alt="Image" src="https://github.com/user-attachments/assets/9040bb6f-5244-4755-aa70-d9b6be699953" style="max-width: 100%; height: auto; max-height: 236px;; aspect-ratio: 897 / 236; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
 <hr>
 <h3>1. 改变循环顺序</h3>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">matmul_change_order</span>(<span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; A, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; B, <span class="pl-k">const</span> Matrix&lt;<span class="pl-k">double</span>&gt;&amp; C)
@@ -238,9 +238,9 @@ $$</p>
     }
 }</pre></div>
 <p>在 <strong>i-j-k</strong> 顺序下，在最内层的循环中，可以看到对 <strong>A(i, k)</strong> 的访问是连续的，但是 <strong>B(k, j)</strong> 的访问会有一个 <strong>j</strong> 大小的Strided。</p>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/fdd96abf-3291-4968-af63-33f94aba5efc"><img width="491" height="499" alt="Image" src="https://github.com/user-attachments/assets/fdd96abf-3291-4968-af63-33f94aba5efc" style="max-width: 100%; height: auto; max-height: 499px;"></a></p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/fdd96abf-3291-4968-af63-33f94aba5efc"><img width="491" height="499" alt="Image" src="https://github.com/user-attachments/assets/fdd96abf-3291-4968-af63-33f94aba5efc" style="max-width: 100%; height: auto; max-height: 499px;; aspect-ratio: 491 / 499; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
 <p>改为 <strong>i-k-j</strong> 顺序后，在最内层的循环中，可以看到对于A矩阵，<strong>A(i, k)</strong> 的访问还是连续的，而此时对 <strong>B(k, j)</strong> 和 <strong>C(i, j)</strong> 的访问也会变成连续的的了。这不仅最大化了缓存行利用率，还能有效触发硬件预取器。</p>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/5d5739ca-d0fc-41c2-9a62-2d109b37f06a"><img width="485" height="488" alt="Image" src="https://github.com/user-attachments/assets/5d5739ca-d0fc-41c2-9a62-2d109b37f06a" style="max-width: 100%; height: auto; max-height: 488px;"></a></p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/5d5739ca-d0fc-41c2-9a62-2d109b37f06a"><img width="485" height="488" alt="Image" src="https://github.com/user-attachments/assets/5d5739ca-d0fc-41c2-9a62-2d109b37f06a" style="max-width: 100%; height: auto; max-height: 488px;; aspect-ratio: 485 / 488; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
 <p><strong>最终结果</strong> 性能相比Naive实现提升了约12.6倍。</p>
 <hr>
 <h3>2. Tiling分片</h3>
@@ -307,11 +307,11 @@ $$</p>
         }
     }
 }</pre></div>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/58ab61c1-c7f8-4f20-a3c4-3fe4c24f75ff"><img width="426" height="491" alt="Image" src="https://github.com/user-attachments/assets/58ab61c1-c7f8-4f20-a3c4-3fe4c24f75ff" style="max-width: 100%; height: auto; max-height: 491px;"></a></p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/58ab61c1-c7f8-4f20-a3c4-3fe4c24f75ff"><img width="426" height="491" alt="Image" src="https://github.com/user-attachments/assets/58ab61c1-c7f8-4f20-a3c4-3fe4c24f75ff" style="max-width: 100%; height: auto; max-height: 491px;; aspect-ratio: 426 / 491; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
 <p><strong>最终结果</strong> 性能相比Naive实现提升了约38.9倍。</p>
 <hr>
 <h3>3. 矢量化</h3>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/58b4578a-8ee8-45e7-97d9-439704012887"><img width="962" height="365" alt="Image" src="https://github.com/user-attachments/assets/58b4578a-8ee8-45e7-97d9-439704012887" style="max-width: 100%; height: auto; max-height: 365px;"></a></p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/58b4578a-8ee8-45e7-97d9-439704012887"><img width="962" height="365" alt="Image" src="https://github.com/user-attachments/assets/58b4578a-8ee8-45e7-97d9-439704012887" style="max-width: 100%; height: auto; max-height: 365px;; aspect-ratio: 962 / 365; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> BLOCK&gt;
 <span class="pl-k">void</span> <span class="pl-en">matmul_avxblock_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* mb, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K)
 {
@@ -332,7 +332,7 @@ $$</p>
 <p><strong>最终结果</strong> 性能相比Naive实现提升了约48.13倍。</p>
 <hr>
 <h3>4. 基于缓存的tiling分块</h3>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/4a95add4-8108-4a2a-903c-485c756eb7f5"><img width="565" height="797" alt="Image" src="https://github.com/user-attachments/assets/4a95add4-8108-4a2a-903c-485c756eb7f5" style="max-width: 100%; height: auto; max-height: 797px;"></a></p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/4a95add4-8108-4a2a-903c-485c756eb7f5"><img width="565" height="797" alt="Image" src="https://github.com/user-attachments/assets/4a95add4-8108-4a2a-903c-485c756eb7f5" style="max-width: 100%; height: auto; max-height: 797px;; aspect-ratio: 565 / 797; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
 <p>将大矩阵切分为适合装入 L1 和 L2 Cache 的小块。</p>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nr, <span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Kc, <span class="pl-k">int</span> Nc&gt;
 <span class="pl-k">void</span> <span class="pl-en">matmul_cache_block_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* mb, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K)
@@ -447,12 +447,12 @@ $$</p>
             }
         }
     }</pre></div>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/345dde22-fc33-4cff-aca3-cf141eaa32f9"><img width="418" height="207" alt="Image" src="https://github.com/user-attachments/assets/345dde22-fc33-4cff-aca3-cf141eaa32f9" style="max-width: 100%; height: auto; max-height: 207px;"></a></p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/345dde22-fc33-4cff-aca3-cf141eaa32f9"><img width="418" height="207" alt="Image" src="https://github.com/user-attachments/assets/345dde22-fc33-4cff-aca3-cf141eaa32f9" style="max-width: 100%; height: auto; max-height: 207px;; aspect-ratio: 418 / 207; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
 <p><strong>最终结果</strong> 性能相比Naive实现提升了约326.1倍。</p>
 <hr>
 <h3>7. 矩阵tile布局</h3>
 <p>在进入内核计算之前，将具有 Strided 内存布局的子 Tile，预先 Copy 到一段连续的内存 Buffer 中。这样可以消除最内层循环中的 Stride 计算，确保在读取 A 和 B 矩阵块时拥有连续访问。</p>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/e706d5a4-d5fa-4850-95bb-923a2e72fc6d"><img width="284" height="451" alt="Image" src="https://github.com/user-attachments/assets/e706d5a4-d5fa-4850-95bb-923a2e72fc6d" style="max-width: 100%; height: auto; max-height: 451px;"></a></p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/e706d5a4-d5fa-4850-95bb-923a2e72fc6d"><img width="284" height="451" alt="Image" src="https://github.com/user-attachments/assets/e706d5a4-d5fa-4850-95bb-923a2e72fc6d" style="max-width: 100%; height: auto; max-height: 451px;; aspect-ratio: 284 / 451; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
 <div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">template</span>&lt;<span class="pl-k">int</span> Nr, <span class="pl-k">int</span> Mr, <span class="pl-k">int</span> Kc&gt;
 <span class="pl-k">void</span> <span class="pl-en">matmul_reg_block_reordered_kernel</span>(<span class="pl-k">const</span> <span class="pl-k">double</span>* a, <span class="pl-k">const</span> <span class="pl-k">double</span>* b, <span class="pl-k">double</span>* c, <span class="pl-k">int</span> N)
 {
