@@ -195,13 +195,11 @@ __global__ void TilingGemmKernel(const float* A, const float* B, float* C, int M
                 int innerRow = threadIdx.y * TILE_SIZE + j;
                 int innerCol = threadIdx.x * TILE_SIZE + k;
 
-                // Load matrix A sub-tile into Shared Memory with safe bounds check
                 if ((blockARowStart + innerRow) < M && (blockAColStart + innerCol) < K)
                     blockA[innerRow][innerCol] = A[(blockARowStart + innerRow) * K + blockAColStart + innerCol];
                 else
                     blockA[innerRow][innerCol] = 0.0f;
                 
-                // Load matrix B sub-tile into Shared Memory with safe bounds check
                 if ((blockBRowStart + innerRow) < K && (blockBColStart + innerCol) < N)
                     blockB[innerRow][innerCol] = B[(blockBRowStart + innerRow) * N + blockBColStart + innerCol];
                 else
@@ -242,6 +240,24 @@ void LaunchTilingGemm(const float* A, const float* B, float* C, int M, int N, in
     CUDA_CHECK(cudaPeekAtLastError());
 }
 ```
+
+&emsp;&emsp;在shared memory gemm kernel中，每个thread为了执行一次计算需要从shread memory中读取2个float，此时的计算访存比是1:2，虽然shread memory很快，但是当所有线程都在进行高频小数据读取时，shread memory的带宽还是很容易成为瓶颈，因此为了提高对shread memory的访存比，我们模仿shread memory缓存global memory的方式，用registers来缓存shread memory。
+
+&emsp;&emsp;这个方法被称为Tiling算法，也就是在Block中再划分出一个小Block成为Tile，每个线程现在不再只计算一个元素，而是对这个Tile的所有元素进行计算，我们设定的Tile大小是4，也就是16次计算，这时只需要8次访存，计算访存比达到了2:1，相比shared memory提升了四倍，方法如图所示。
+
+<img width="1072" height="1071" alt="Image" src="https://github.com/user-attachments/assets/b6b45684-7641-467f-993a-4eb4fe5d2005" />
+
+&emsp;&emsp;可以看到，先用blockIdx来定位Block的起点，由于blockIdx是在M和N上并行，而K是内部并行，用blockIdx.y和K来定位Block A的起点坐标，用K和blockIdx.x来定位Block B的起点坐标。另一方面，由于每个线程不再只计算一个元素，而是计算TILE_SIZE长宽高的Tile，因此blockDim也不再是BLOCK_SIZE了，而是BLOCK_SIZE / TILE_SIZE，由于这个原因，在定位Block起点的时候就不能乘以blockDim了，因为在逻辑上每个Block还是处理了BLOCK_SIZE长宽高的数据，只是blockDim保存的BLOCK_SIZE / TILE_SIZE，所以BlockStart是用blockIdx * BLOCK_SIZE表示。
+
+&emsp;&emsp;在加载一个Block数据到shared memory中时，依然对K进行内循环，通过K来确定Block A的列坐标和Block B的heng坐标，这样就能获取Block的左上角起点坐标了。
+
+&emsp;&emsp;下一步是获取Block内部每个Tile的左上角起点坐标。由于每个Block现在不再有BLOCK_SIZE个thread，而是BLOCK_SIZE / TILE_SIZE个thread，每个threadY要处理TILE_SIZE行，每个threadX要处理TILE_SIZE列，因此每个Tile的左上角起点坐标就是threadIdx * TILE_SIZE的坐标。
+
+&emsp;&emsp;现在可以加载数据了，加载用的for j和for k循环次数用的常数TILE_SIZE，也就是GPU会执行TILE_SIZE*TILE_SIZE次加载，每一个时刻步中，所有thread同时对整个Block的所有Tile加载一个元素，执行完时刻步后就加载完了整个Block，此时的加载逻辑就只需要将shared memory的Block和A矩阵、B矩阵的对应地址元素对应即可。
+
+&emsp;&emsp;为什么加载时只需要进行for j和for k循环就行了，而计算时还需要多一个for dotIdx循环BLOCK_SIZE次呢？这是因为在加载的时候，只需要把对应Tile读取的数放到Block中对应Tile的位置就行了，而计算还需要对行和列进行累加，因此会多出一个BLOCK_SIZE循环。
+
+&emsp;&emsp;
 
 **最终结果** 4401 GFLOPS，约为cuBlas的31.84%，相比naive实现提升了17.96倍。
 
