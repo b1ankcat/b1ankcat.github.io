@@ -245,7 +245,7 @@ void LaunchTilingGemm(const float* A, const float* B, float* C, int M, int N, in
 
 &emsp;&emsp;这个方法被称为Tiling算法，也就是在Block中再划分出一个小Block成为Tile，每个线程现在不再只计算一个元素，而是对这个Tile的所有元素进行计算，我们设定的Tile大小是4，也就是16次计算，这时只需要8次访存，计算访存比达到了2:1，相比shared memory提升了四倍，方法如图所示。
 
-<img width="1072" height="1071" alt="Image" src="https://github.com/user-attachments/assets/b6b45684-7641-467f-993a-4eb4fe5d2005" />
+<img width="1086" height="1077" alt="Image" src="https://github.com/user-attachments/assets/91beb804-2b35-4bf6-b959-d4d6b910d40b" />
 
 &emsp;&emsp;可以看到，先用blockIdx来定位Block的起点，由于blockIdx是在M和N上并行，而K是内部并行，用blockIdx.y和K来定位Block A的起点坐标，用K和blockIdx.x来定位Block B的起点坐标。另一方面，由于每个线程不再只计算一个元素，而是计算TILE_SIZE长宽高的Tile，因此blockDim也不再是BLOCK_SIZE了，而是BLOCK_SIZE / TILE_SIZE，由于这个原因，在定位Block起点的时候就不能乘以blockDim了，因为在逻辑上每个Block还是处理了BLOCK_SIZE长宽高的数据，只是blockDim保存的BLOCK_SIZE / TILE_SIZE，所以BlockStart是用blockIdx * BLOCK_SIZE表示。
 
