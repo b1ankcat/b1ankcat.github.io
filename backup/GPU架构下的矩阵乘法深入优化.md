@@ -281,62 +281,66 @@ __global__ void VecGemmKernel(const float* A, const float* B, float* C, int M, i
     __shared__ float blockB[BLOCK_SIZE][BLOCK_SIZE + 1];
     float tileC[TILE_SIZE][TILE_SIZE] = {0.0f};
 
-    const int tidx = threadIdx.x;
-    const int tidy = threadIdx.y;
-    uint32_t blockRowStart = blockIdx.y * BLOCK_SIZE;
-    uint32_t blockColStart = blockIdx.x * BLOCK_SIZE;
-    const int totalThreads = (BLOCK_SIZE / TILE_SIZE) * (BLOCK_SIZE / TILE_SIZE);
-    const int linearId = tidy * (BLOCK_SIZE / TILE_SIZE) + tidx;
+    uint32_t blockARowStart = blockIdx.y * BLOCK_SIZE;
+    uint32_t blockBColStart = blockIdx.x * BLOCK_SIZE;
     
     for (uint32_t i = 0; i < (K + BLOCK_SIZE - 1) / BLOCK_SIZE; i++) {
-        int blockKStart = i * BLOCK_SIZE;
-        
+        int blockAColStart = i * BLOCK_SIZE;
+        int blockBRowStart = i * BLOCK_SIZE;
+
         #pragma unroll
-        for (int loadOffset = 0; loadOffset < (BLOCK_SIZE * BLOCK_SIZE) / (totalThreads * 4); loadOffset++) {
-            int loadId = (linearId + loadOffset * totalThreads);
-            int loadRow = loadId / (BLOCK_SIZE / 4);
-            int loadCol = (loadId % (BLOCK_SIZE / 4)) * 4;
+        for (uint32_t j = 0; j < TILE_SIZE; j++) {
+            for (uint32_t k = 0; k < TILE_SIZE / 4; k++) {
+                int innerRow = threadIdx.y * TILE_SIZE + j;
+                int innerCol = threadIdx.x * TILE_SIZE + k * 4;
 
-            if (blockRowStart + loadRow < M && blockKStart + loadCol < K) {
-                float4 tmpA = reinterpret_cast<const float4*>(&A[(blockRowStart + loadRow) * K + blockKStart + loadCol])[0];
-                blockA[loadRow][loadCol + 0] = tmpA.x;
-                blockA[loadRow][loadCol + 1] = tmpA.y;
-                blockA[loadRow][loadCol + 2] = tmpA.z;
-                blockA[loadRow][loadCol + 3] = tmpA.w;
-            } else {
-                blockA[loadRow][loadCol + 0] = 0; blockA[loadRow][loadCol + 1] = 0;
-                blockA[loadRow][loadCol + 2] = 0; blockA[loadRow][loadCol + 3] = 0;
-            }
-
-            if (blockKStart + loadRow < K && blockColStart + loadCol < N) {
-                float4 tmpB = reinterpret_cast<const float4*>(&B[(blockKStart + loadRow) * N + blockColStart + loadCol])[0];
-                blockB[loadRow][loadCol + 0] = tmpB.x;
-                blockB[loadRow][loadCol + 1] = tmpB.y;
-                blockB[loadRow][loadCol + 2] = tmpB.z;
-                blockB[loadRow][loadCol + 3] = tmpB.w;
-            } else {
-                blockB[loadRow][loadCol + 0] = 0; blockB[loadRow][loadCol + 1] = 0;
-                blockB[loadRow][loadCol + 2] = 0; blockB[loadRow][loadCol + 3] = 0;
+                if ((blockARowStart + innerRow) < M && (blockAColStart + innerCol) < K){
+                    float4 tmpA = reinterpret_cast<const float4*>(&A[(blockARowStart + innerRow) * K + blockAColStart + innerCol])[0];
+                    blockA[innerRow][innerCol + 0] = tmpA.x;
+                    blockA[innerRow][innerCol + 1] = tmpA.y;
+                    blockA[innerRow][innerCol + 2] = tmpA.z;
+                    blockA[innerRow][innerCol + 3] = tmpA.w;
+                }
+                else{
+                    blockA[innerRow][innerCol + 0] = 0.0f;
+                    blockA[innerRow][innerCol + 1] = 0.0f;
+                    blockA[innerRow][innerCol + 2] = 0.0f;
+                    blockA[innerRow][innerCol + 3] = 0.0f;
+                }
+                
+                if ((blockBRowStart + innerRow) < K && (blockBColStart + innerCol) < N){
+                    float4 tmpB = reinterpret_cast<const float4*>(&B[(blockBRowStart + innerRow) * N + blockBColStart + innerCol])[0];
+                    blockB[innerRow][innerCol + 0] = tmpB.x;
+                    blockB[innerRow][innerCol + 1] = tmpB.y;
+                    blockB[innerRow][innerCol + 2] = tmpB.z;
+                    blockB[innerRow][innerCol + 3] = tmpB.w;
+                }
+                else{
+                    blockB[innerRow][innerCol + 0] = 0.0f;
+                    blockB[innerRow][innerCol + 1] = 0.0f;
+                    blockB[innerRow][innerCol + 2] = 0.0f;
+                    blockB[innerRow][innerCol + 3] = 0.0f;
+                }
             }
         }
         __syncthreads();
 
         #pragma unroll
-        for (int k = 0; k < BLOCK_SIZE; k++) {
+        for (int dotIdx = 0; dotIdx < BLOCK_SIZE; dotIdx++) {
             float regA[TILE_SIZE];
             float regB[TILE_SIZE];
 
             #pragma unroll
             for (int j = 0; j < TILE_SIZE; j++) {
-                regA[j] = blockA[tidy * TILE_SIZE + j][k];
-                regB[j] = blockB[k][tidx * TILE_SIZE + j];
+                regA[j] = blockA[threadIdx.y * TILE_SIZE + j][dotIdx];
+                regB[j] = blockB[dotIdx][threadIdx.x * TILE_SIZE + j];
             }
 
             #pragma unroll
             for (int j = 0; j < TILE_SIZE; j++) {
                 #pragma unroll
-                for (int l = 0; l < TILE_SIZE; l++) {
-                    tileC[j][l] += regA[j] * regB[l];
+                for (int k = 0; k < TILE_SIZE; k++) {
+                    tileC[j][k] += regA[j] * regB[k];
                 }
             }
         }
@@ -344,15 +348,12 @@ __global__ void VecGemmKernel(const float* A, const float* B, float* C, int M, i
     }
     
     #pragma unroll
-    for (int j = 0; j < TILE_SIZE; j++) {
-        int finalRow = blockRowStart + tidy * TILE_SIZE + j;
-        if (finalRow < M) {
-            #pragma unroll
-            for (int l = 0; l < TILE_SIZE; l++) {
-                int finalCol = blockColStart + tidx * TILE_SIZE + l;
-                if (finalCol < N) {
-                    C[finalRow * N + finalCol] = tileC[j][l];
-                }
+    for (uint32_t j = 0; j < TILE_SIZE; j++) {
+        for (uint32_t k = 0; k < TILE_SIZE; k++) {
+            int finalRow = blockARowStart + threadIdx.y * TILE_SIZE + j;
+            int finalCol = blockBColStart + threadIdx.x * TILE_SIZE + k;
+            if (finalRow < M && finalCol < N) {
+                C[finalRow * N + finalCol] = tileC[j][k];
             }
         }
     }
@@ -365,7 +366,18 @@ void LaunchVecGemm(const float* A, const float* B, float* C, int M, int N, int K
     CUDA_CHECK(cudaPeekAtLastError());
 }
 ```
+&emsp;&emsp;首先，为了加速数据加载，我们使用 float4 进行矢量化。原本在 K 轴的循环需要进行 TILE_SIZE 次，现在每次可以一次性加载连续的 4 个 float，因此循环次数可除以 4，同时 innerCol 也按 stride 进行调整，每个线程一次性加载一行中的四列数据。
 
-**最终结果** 8405 GFLOPS，约为cuBlas的69.92%，相比naive实现提升了34.31倍。
+&emsp;&emsp;每个线程只需进行 TILE_SIZE 次循环，每次循环将对应 Tile 的一列 A 和一行 B 加载到寄存器中，然后执行外积计算。通过这种方式，每次循环就完成了 Tile 的一个时间步计算，即 (TILE_SIZE, 1) 与 (1, TILE_SIZE) 的乘法累加操作。经过 BLOCK_SIZE 次循环后，整个 Tile 的 K 轴累加完成，Tile 内所有元素的最终值也随之计算完成，从而完成矩阵乘法的一部分。
 
-<img width="617" height="211" alt="Image" src="https://github.com/user-attachments/assets/34f84d5a-9065-49da-8323-cc7eb33800f4" />
+**最终结果** 7657 GFLOPS，约为cuBlas的60.34%，相比naive实现提升了31.25倍。
+
+<img width="618" height="213" alt="Image" src="https://github.com/user-attachments/assets/52cdf8d3-ce03-4ab6-a67d-d8bfbf49732d" />
+
+---
+### 5. warp tiling + double buffer kernel实现
+
+```cu
+```
+
+**最终结果** 7657 GFLOPS，约为cuBlas的60.34%，相比naive实现提升了31.25倍。

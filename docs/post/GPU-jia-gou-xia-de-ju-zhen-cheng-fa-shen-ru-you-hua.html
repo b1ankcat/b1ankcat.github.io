@@ -380,62 +380,66 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockB[BLOCK_SIZE][BLOCK_SIZE + <span class="pl-c1">1</span>];
     <span class="pl-k">float</span> tileC[TILE_SIZE][TILE_SIZE] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};
 
-    <span class="pl-k">const</span> <span class="pl-k">int</span> tidx = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
-    <span class="pl-k">const</span> <span class="pl-k">int</span> tidy = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span>;
-    <span class="pl-c1">uint32_t</span> blockRowStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * BLOCK_SIZE;
-    <span class="pl-c1">uint32_t</span> blockColStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * BLOCK_SIZE;
-    <span class="pl-k">const</span> <span class="pl-k">int</span> totalThreads = (BLOCK_SIZE / TILE_SIZE) * (BLOCK_SIZE / TILE_SIZE);
-    <span class="pl-k">const</span> <span class="pl-k">int</span> linearId = tidy * (BLOCK_SIZE / TILE_SIZE) + tidx;
+    <span class="pl-c1">uint32_t</span> blockARowStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * BLOCK_SIZE;
+    <span class="pl-c1">uint32_t</span> blockBColStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * BLOCK_SIZE;
     
     <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; (K + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE; i++) {
-        <span class="pl-k">int</span> blockKStart = i * BLOCK_SIZE;
-        
+        <span class="pl-k">int</span> blockAColStart = i * BLOCK_SIZE;
+        <span class="pl-k">int</span> blockBRowStart = i * BLOCK_SIZE;
+
         #<span class="pl-k">pragma</span> unroll
-        <span class="pl-k">for</span> (<span class="pl-k">int</span> loadOffset = <span class="pl-c1">0</span>; loadOffset &lt; (BLOCK_SIZE * BLOCK_SIZE) / (totalThreads * <span class="pl-c1">4</span>); loadOffset++) {
-            <span class="pl-k">int</span> loadId = (linearId + loadOffset * totalThreads);
-            <span class="pl-k">int</span> loadRow = loadId / (BLOCK_SIZE / <span class="pl-c1">4</span>);
-            <span class="pl-k">int</span> loadCol = (loadId % (BLOCK_SIZE / <span class="pl-c1">4</span>)) * <span class="pl-c1">4</span>;
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+            <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE / <span class="pl-c1">4</span>; k++) {
+                <span class="pl-k">int</span> innerRow = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j;
+                <span class="pl-k">int</span> innerCol = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k * <span class="pl-c1">4</span>;
 
-            <span class="pl-k">if</span> (blockRowStart + loadRow &lt; M &amp;&amp; blockKStart + loadCol &lt; K) {
-                <span class="pl-c1">float4</span> tmpA = <span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">float4</span>*&gt;(&amp;A[(blockRowStart + loadRow) * K + blockKStart + loadCol])[<span class="pl-c1">0</span>];
-                blockA[loadRow][loadCol + <span class="pl-c1">0</span>] = tmpA.<span class="pl-smi">x</span>;
-                blockA[loadRow][loadCol + <span class="pl-c1">1</span>] = tmpA.<span class="pl-smi">y</span>;
-                blockA[loadRow][loadCol + <span class="pl-c1">2</span>] = tmpA.<span class="pl-smi">z</span>;
-                blockA[loadRow][loadCol + <span class="pl-c1">3</span>] = tmpA.<span class="pl-smi">w</span>;
-            } <span class="pl-k">else</span> {
-                blockA[loadRow][loadCol + <span class="pl-c1">0</span>] = <span class="pl-c1">0</span>; blockA[loadRow][loadCol + <span class="pl-c1">1</span>] = <span class="pl-c1">0</span>;
-                blockA[loadRow][loadCol + <span class="pl-c1">2</span>] = <span class="pl-c1">0</span>; blockA[loadRow][loadCol + <span class="pl-c1">3</span>] = <span class="pl-c1">0</span>;
-            }
-
-            <span class="pl-k">if</span> (blockKStart + loadRow &lt; K &amp;&amp; blockColStart + loadCol &lt; N) {
-                <span class="pl-c1">float4</span> tmpB = <span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">float4</span>*&gt;(&amp;B[(blockKStart + loadRow) * N + blockColStart + loadCol])[<span class="pl-c1">0</span>];
-                blockB[loadRow][loadCol + <span class="pl-c1">0</span>] = tmpB.<span class="pl-smi">x</span>;
-                blockB[loadRow][loadCol + <span class="pl-c1">1</span>] = tmpB.<span class="pl-smi">y</span>;
-                blockB[loadRow][loadCol + <span class="pl-c1">2</span>] = tmpB.<span class="pl-smi">z</span>;
-                blockB[loadRow][loadCol + <span class="pl-c1">3</span>] = tmpB.<span class="pl-smi">w</span>;
-            } <span class="pl-k">else</span> {
-                blockB[loadRow][loadCol + <span class="pl-c1">0</span>] = <span class="pl-c1">0</span>; blockB[loadRow][loadCol + <span class="pl-c1">1</span>] = <span class="pl-c1">0</span>;
-                blockB[loadRow][loadCol + <span class="pl-c1">2</span>] = <span class="pl-c1">0</span>; blockB[loadRow][loadCol + <span class="pl-c1">3</span>] = <span class="pl-c1">0</span>;
+                <span class="pl-k">if</span> ((blockARowStart + innerRow) &lt; M &amp;&amp; (blockAColStart + innerCol) &lt; K){
+                    <span class="pl-c1">float4</span> tmpA = <span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">float4</span>*&gt;(&amp;A[(blockARowStart + innerRow) * K + blockAColStart + innerCol])[<span class="pl-c1">0</span>];
+                    blockA[innerRow][innerCol + <span class="pl-c1">0</span>] = tmpA.<span class="pl-smi">x</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">1</span>] = tmpA.<span class="pl-smi">y</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">2</span>] = tmpA.<span class="pl-smi">z</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">3</span>] = tmpA.<span class="pl-smi">w</span>;
+                }
+                <span class="pl-k">else</span>{
+                    blockA[innerRow][innerCol + <span class="pl-c1">0</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">1</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">2</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">3</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                }
+                
+                <span class="pl-k">if</span> ((blockBRowStart + innerRow) &lt; K &amp;&amp; (blockBColStart + innerCol) &lt; N){
+                    <span class="pl-c1">float4</span> tmpB = <span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">float4</span>*&gt;(&amp;B[(blockBRowStart + innerRow) * N + blockBColStart + innerCol])[<span class="pl-c1">0</span>];
+                    blockB[innerRow][innerCol + <span class="pl-c1">0</span>] = tmpB.<span class="pl-smi">x</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">1</span>] = tmpB.<span class="pl-smi">y</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">2</span>] = tmpB.<span class="pl-smi">z</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">3</span>] = tmpB.<span class="pl-smi">w</span>;
+                }
+                <span class="pl-k">else</span>{
+                    blockB[innerRow][innerCol + <span class="pl-c1">0</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">1</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">2</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">3</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                }
             }
         }
         <span class="pl-c1">__syncthreads</span>();
 
         #<span class="pl-k">pragma</span> unroll
-        <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; BLOCK_SIZE; k++) {
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> dotIdx = <span class="pl-c1">0</span>; dotIdx &lt; BLOCK_SIZE; dotIdx++) {
             <span class="pl-k">float</span> regA[TILE_SIZE];
             <span class="pl-k">float</span> regB[TILE_SIZE];
 
             #<span class="pl-k">pragma</span> unroll
             <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
-                regA[j] = blockA[tidy * TILE_SIZE + j][k];
-                regB[j] = blockB[k][tidx * TILE_SIZE + j];
+                regA[j] = blockA[<span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j][dotIdx];
+                regB[j] = blockB[dotIdx][<span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + j];
             }
 
             #<span class="pl-k">pragma</span> unroll
             <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
                 #<span class="pl-k">pragma</span> unroll
-                <span class="pl-k">for</span> (<span class="pl-k">int</span> l = <span class="pl-c1">0</span>; l &lt; TILE_SIZE; l++) {
-                    tileC[j][l] += regA[j] * regB[l];
+                <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
+                    tileC[j][k] += regA[j] * regB[k];
                 }
             }
         }
@@ -443,15 +447,12 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     }
     
     #<span class="pl-k">pragma</span> unroll
-    <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
-        <span class="pl-k">int</span> finalRow = blockRowStart + tidy * TILE_SIZE + j;
-        <span class="pl-k">if</span> (finalRow &lt; M) {
-            #<span class="pl-k">pragma</span> unroll
-            <span class="pl-k">for</span> (<span class="pl-k">int</span> l = <span class="pl-c1">0</span>; l &lt; TILE_SIZE; l++) {
-                <span class="pl-k">int</span> finalCol = blockColStart + tidx * TILE_SIZE + l;
-                <span class="pl-k">if</span> (finalCol &lt; N) {
-                    C[finalRow * N + finalCol] = tileC[j][l];
-                }
+    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
+            <span class="pl-k">int</span> finalRow = blockARowStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j;
+            <span class="pl-k">int</span> finalCol = blockBColStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k;
+            <span class="pl-k">if</span> (finalRow &lt; M &amp;&amp; finalCol &lt; N) {
+                C[finalRow * N + finalCol] = tileC[j][k];
             }
         }
     }
@@ -463,8 +464,14 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     VecGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
     <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
 }</pre></div>
-<p><strong>最终结果</strong> 8405 GFLOPS，约为cuBlas的69.92%，相比naive实现提升了34.31倍。</p>
-<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/34f84d5a-9065-49da-8323-cc7eb33800f4"><img width="617" height="211" alt="Image" src="https://github.com/user-attachments/assets/34f84d5a-9065-49da-8323-cc7eb33800f4" style="max-width: 100%; height: auto; max-height: 211px;; aspect-ratio: 617 / 211; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p></div>
+<p>  首先，为了加速数据加载，我们使用 float4 进行矢量化。原本在 K 轴的循环需要进行 TILE_SIZE 次，现在每次可以一次性加载连续的 4 个 float，因此循环次数可除以 4，同时 innerCol 也按 stride 进行调整，每个线程一次性加载一行中的四列数据。</p>
+<p>  每个线程只需进行 TILE_SIZE 次循环，每次循环将对应 Tile 的一列 A 和一行 B 加载到寄存器中，然后执行外积计算。通过这种方式，每次循环就完成了 Tile 的一个时间步计算，即 (TILE_SIZE, 1) 与 (1, TILE_SIZE) 的乘法累加操作。经过 BLOCK_SIZE 次循环后，整个 Tile 的 K 轴累加完成，Tile 内所有元素的最终值也随之计算完成，从而完成矩阵乘法的一部分。</p>
+<p><strong>最终结果</strong> 7657 GFLOPS，约为cuBlas的60.34%，相比naive实现提升了31.25倍。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/52cdf8d3-ce03-4ab6-a67d-d8bfbf49732d"><img width="618" height="213" alt="Image" src="https://github.com/user-attachments/assets/52cdf8d3-ce03-4ab6-a67d-d8bfbf49732d" style="max-width: 100%; height: auto; max-height: 213px;; aspect-ratio: 618 / 213; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<hr>
+<h3>5. warp tiling + double buffer kernel实现</h3>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"></pre></div>
+<p><strong>最终结果</strong> 7657 GFLOPS，约为cuBlas的60.34%，相比naive实现提升了31.25倍。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
