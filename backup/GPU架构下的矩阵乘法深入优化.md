@@ -253,7 +253,7 @@ void LaunchTilingGemm(const float* A, const float* B, float* C, int M, int N, in
 
 &emsp;&emsp;下一步是获取Block内部每个Tile的左上角起点坐标。由于每个Block现在不再有BLOCK_SIZE个thread，而是BLOCK_SIZE / TILE_SIZE个thread，每个threadY要处理TILE_SIZE行，每个threadX要处理TILE_SIZE列，因此每个Tile的左上角起点坐标就是threadIdx * TILE_SIZE的坐标。
 
-&emsp;&emsp;现在可以加载数据了，加载用的for j和for k循环次数用的常数TILE_SIZE，也就是GPU会执行TILE_SIZE*TILE_SIZE次加载，每一个时间步中，所有thread同时对整个Block的所有Tile加载一个元素，执行完时间步后就加载完了整个Block，此时的加载逻辑就只需要将shared memory的Block和A矩阵、B矩阵的对应地址元素对应即可。
+&emsp;&emsp;现在可以加载数据了，加载用的for j和for k循环次数用的常数TILE_SIZE，也就是GPU会执行TILE_SIZE * TILE_SIZE次加载，每一个时间步中，所有thread同时对整个Block的所有Tile加载一个元素，执行完时间步后就加载完了整个Block，此时的加载逻辑就只需要将shared memory的Block和A矩阵、B矩阵的对应地址元素对应即可。
 
 &emsp;&emsp;对加载来说，每个thread都是从tile的左上角开始，每个时间步移动一个元素，经过TILE_SIZE*TILE_SIZE个时间步后加载完正片Tile，每个时间步中threadX和threadY并发进行，也就是同时对一个Block的所有Tile进行加载，并且在每个时间步中同时对A矩阵和B矩阵进行加载。
 
@@ -261,9 +261,9 @@ void LaunchTilingGemm(const float* A, const float* B, float* C, int M, int N, in
 
 &emsp;&emsp;具体到代码中来说，每个thread在循环中计算blockA的对应Tile的第j行所有数据，因此第一个维度填写j，而第二个维度填写dotIdx，因为blockA在行维度并行，因此第一个维度还要加上threadIdx.y * TILE_SIZE来定位具体的Tile。同理，对blockB来说计算对应Tile的第k列所有数据，因此第一个维度填写dotIdx，而第二个维度填写k加上列并行的threadIdx.x * TILE_SIZE。
 
-&emsp;&emsp;以GPU并行的视角来看，相当于每个thread进行了BLOCK_SIZE*TILE_SIZE*TILE_SIZE个时间步，在每个时间步中，每进行BLOCK_SIZE次时间步，thread就会计算出Block中所有Tile的一个值，一共进行TILE_SIZE*TILE_SIZE次BLOCK_SIZE时间步最终计算完Block中所有Tile的所有值，在BLOCK_SIZE次时间步中，thread是在对block的K轴数据进行乘加，而在TILE_SIZE*TILE_SIZE时间步中，thread是在计算需要完成的TILE_SIZE行TILE_SIZE列数据。
+&emsp;&emsp;以GPU并行的视角来看，相当于每个thread进行了BLOCK_SIZE次TILE_SIZE * TILE_SIZE个时间步，在每个时间步中，每进行BLOCK_SIZE次时间步，thread就会计算出Block中所有Tile的一个值，一共进行TILE_SIZE * TILE_SIZE次BLOCK_SIZE时间步最终计算完Block中所有Tile的所有值，在BLOCK_SIZE次时间步中，thread是在对block的K轴数据进行乘加，而在TILE_SIZE * TILE_SIZE时间步中，thread是在计算需要完成的TILE_SIZE行TILE_SIZE列数据。
 
-&emsp;&emsp;最后需要将数据写回global memory，此时对应Block的对应Tile的数据就是正确数据了，因此不用再对K轴进行内部循环，直接将对应thread的Tile值放回C矩阵即可，同样地，所有thread会在同一时刻对Block内的所有Tile进行写回操作，只需要进行TILE_SIZE*TILE_SIZE次时间步就可以完成Block内所有Tile的所有元素写回。
+&emsp;&emsp;最后需要将数据写回global memory，此时对应Block的对应Tile的数据就是正确数据了，因此不用再对K轴进行内部循环，直接将对应thread的Tile值放回C矩阵即可，同样地，所有thread会在同一时刻对Block内的所有Tile进行写回操作，只需要进行TILE_SIZE * TILE_SIZE次时间步就可以完成Block内所有Tile的所有元素写回。
 
 **最终结果** 4401 GFLOPS，约为cuBlas的31.84%，相比naive实现提升了17.96倍。
 
