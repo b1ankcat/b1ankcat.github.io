@@ -243,9 +243,9 @@ void LaunchTilingGemm(const float* A, const float* B, float* C, int M, int N, in
 
 &emsp;&emsp;在shared memory gemm kernel中，每个thread为了执行一次计算需要从shread memory中读取2个float，此时的计算访存比是1:2，虽然shread memory很快，但是当所有线程都在进行高频小数据读取时，shread memory的带宽还是很容易成为瓶颈，因此为了提高对shread memory的访存比，我们模仿shread memory缓存global memory的方式，用registers来缓存shread memory。
 
-&emsp;&emsp;这个方法被称为Tiling算法，也就是在Block中再划分出一个小Block成为Tile，每个线程现在不再只计算一个元素，而是对这个Tile的所有元素进行计算，我们设定的Tile大小是4，也就是16次计算，这时只需要8次访存，计算访存比达到了2:1，相比shared memory提升了四倍，方法如图所示。
+&emsp;&emsp;这个方法被称为Tiling算法，也就是在Block中再划分出一个小Block成为Tile，每个线程现在不再只计算一个元素，而是对这个Tile的所有元素进行计算，我们设定的Tile大小是4，也就是16次计算，这时只需要8次访存，计算访存比达到了2:1，相比shared memory提升了四倍，其索引取值如图所示。
 
-<img width="1086" height="1077" alt="Image" src="https://github.com/user-attachments/assets/91beb804-2b35-4bf6-b959-d4d6b910d40b" />
+<img width="1077" height="1053" alt="Image" src="https://github.com/user-attachments/assets/dc5b9aad-7ea2-479d-8436-cf440aac6001" />
 
 &emsp;&emsp;可以看到，先用blockIdx来定位Block的起点，由于blockIdx是在M和N上并行，而K是内部并行，用blockIdx.y和K来定位Block A的起点坐标，用K和blockIdx.x来定位Block B的起点坐标。另一方面，由于每个线程不再只计算一个元素，而是计算TILE_SIZE长宽高的Tile，因此blockDim也不再是BLOCK_SIZE了，而是BLOCK_SIZE / TILE_SIZE，由于这个原因，在定位Block起点的时候就不能乘以blockDim了，因为在逻辑上每个Block还是处理了BLOCK_SIZE长宽高的数据，只是blockDim保存的BLOCK_SIZE / TILE_SIZE，所以BlockStart是用blockIdx * BLOCK_SIZE表示。
 
@@ -253,12 +253,119 @@ void LaunchTilingGemm(const float* A, const float* B, float* C, int M, int N, in
 
 &emsp;&emsp;下一步是获取Block内部每个Tile的左上角起点坐标。由于每个Block现在不再有BLOCK_SIZE个thread，而是BLOCK_SIZE / TILE_SIZE个thread，每个threadY要处理TILE_SIZE行，每个threadX要处理TILE_SIZE列，因此每个Tile的左上角起点坐标就是threadIdx * TILE_SIZE的坐标。
 
-&emsp;&emsp;现在可以加载数据了，加载用的for j和for k循环次数用的常数TILE_SIZE，也就是GPU会执行TILE_SIZE*TILE_SIZE次加载，每一个时刻步中，所有thread同时对整个Block的所有Tile加载一个元素，执行完时刻步后就加载完了整个Block，此时的加载逻辑就只需要将shared memory的Block和A矩阵、B矩阵的对应地址元素对应即可。
+&emsp;&emsp;现在可以加载数据了，加载用的for j和for k循环次数用的常数TILE_SIZE，也就是GPU会执行TILE_SIZE*TILE_SIZE次加载，每一个时间步中，所有thread同时对整个Block的所有Tile加载一个元素，执行完时间步后就加载完了整个Block，此时的加载逻辑就只需要将shared memory的Block和A矩阵、B矩阵的对应地址元素对应即可。
 
-&emsp;&emsp;为什么加载时只需要进行for j和for k循环就行了，而计算时还需要多一个for dotIdx循环BLOCK_SIZE次呢？这是因为在加载的时候，只需要把对应Tile读取的数放到Block中对应Tile的位置就行了，而计算还需要对行和列进行累加，因此会多出一个BLOCK_SIZE循环。
+&emsp;&emsp;对加载来说，每个thread都是从tile的左上角开始，每个时间步移动一个元素，经过TILE_SIZE*TILE_SIZE个时间步后加载完正片Tile，每个时间步中threadX和threadY并发进行，也就是同时对一个Block的所有Tile进行加载，并且在每个时间步中同时对A矩阵和B矩阵进行加载。
 
-&emsp;&emsp;
+&emsp;&emsp;而到了计算的时候，tileC其实是每个thread私有的一片reg空间，并且是计算的是最后的结果，那么每个对应tileC[j][k]的位置都需要一整行的blockA和一整列的blockB才能得到最后结果，并且每个thread需要计算TILE_SIZE次，因此还需要进行for dotIdx循环BLOCK_SIZE次，才能获取K轴的全部数据，并且每个线程计算了整个Tile的结果。
+
+&emsp;&emsp;具体到代码中来说，每个thread在循环中计算blockA的对应Tile的第j行所有数据，因此第一个维度填写j，而第二个维度填写dotIdx，因为blockA在行维度并行，因此第一个维度还要加上threadIdx.y * TILE_SIZE来定位具体的Tile。同理，对blockB来说计算对应Tile的第k列所有数据，因此第一个维度填写dotIdx，而第二个维度填写k加上列并行的threadIdx.x * TILE_SIZE。
+
+&emsp;&emsp;以GPU并行的视角来看，相当于每个thread进行了BLOCK_SIZE*TILE_SIZE*TILE_SIZE个时间步，在每个时间步中，每进行BLOCK_SIZE次时间步，thread就会计算出Block中所有Tile的一个值，一共进行TILE_SIZE*TILE_SIZE次BLOCK_SIZE时间步最终计算完Block中所有Tile的所有值，在BLOCK_SIZE次时间步中，thread是在对block的K轴数据进行乘加，而在TILE_SIZE*TILE_SIZE时间步中，thread是在计算需要完成的TILE_SIZE行TILE_SIZE列数据。
+
+&emsp;&emsp;最后需要将数据写回global memory，此时对应Block的对应Tile的数据就是正确数据了，因此不用再对K轴进行内部循环，直接将对应thread的Tile值放回C矩阵即可，同样地，所有thread会在同一时刻对Block内的所有Tile进行写回操作，只需要进行TILE_SIZE*TILE_SIZE次时间步就可以完成Block内所有Tile的所有元素写回。
 
 **最终结果** 4401 GFLOPS，约为cuBlas的31.84%，相比naive实现提升了17.96倍。
 
 <img width="577" height="211" alt="Image" src="https://github.com/user-attachments/assets/0f99255a-a341-4837-b70a-ff5e8b7b3ce1" />
+
+---
+### 4. vector load kernel实现
+
+```cu
+constexpr int BLOCK_SIZE = 32;
+constexpr int TILE_SIZE = 4;
+
+__global__ void VecGemmKernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    __shared__ float blockA[BLOCK_SIZE][BLOCK_SIZE + 1];
+    __shared__ float blockB[BLOCK_SIZE][BLOCK_SIZE + 1];
+    float tileC[TILE_SIZE][TILE_SIZE] = {0.0f};
+
+    const int tidx = threadIdx.x;
+    const int tidy = threadIdx.y;
+    uint32_t blockRowStart = blockIdx.y * BLOCK_SIZE;
+    uint32_t blockColStart = blockIdx.x * BLOCK_SIZE;
+    const int totalThreads = (BLOCK_SIZE / TILE_SIZE) * (BLOCK_SIZE / TILE_SIZE);
+    const int linearId = tidy * (BLOCK_SIZE / TILE_SIZE) + tidx;
+    
+    for (uint32_t i = 0; i < (K + BLOCK_SIZE - 1) / BLOCK_SIZE; i++) {
+        int blockKStart = i * BLOCK_SIZE;
+        
+        #pragma unroll
+        for (int loadOffset = 0; loadOffset < (BLOCK_SIZE * BLOCK_SIZE) / (totalThreads * 4); loadOffset++) {
+            int loadId = (linearId + loadOffset * totalThreads);
+            int loadRow = loadId / (BLOCK_SIZE / 4);
+            int loadCol = (loadId % (BLOCK_SIZE / 4)) * 4;
+
+            if (blockRowStart + loadRow < M && blockKStart + loadCol < K) {
+                float4 tmpA = reinterpret_cast<const float4*>(&A[(blockRowStart + loadRow) * K + blockKStart + loadCol])[0];
+                blockA[loadRow][loadCol + 0] = tmpA.x;
+                blockA[loadRow][loadCol + 1] = tmpA.y;
+                blockA[loadRow][loadCol + 2] = tmpA.z;
+                blockA[loadRow][loadCol + 3] = tmpA.w;
+            } else {
+                blockA[loadRow][loadCol + 0] = 0; blockA[loadRow][loadCol + 1] = 0;
+                blockA[loadRow][loadCol + 2] = 0; blockA[loadRow][loadCol + 3] = 0;
+            }
+
+            if (blockKStart + loadRow < K && blockColStart + loadCol < N) {
+                float4 tmpB = reinterpret_cast<const float4*>(&B[(blockKStart + loadRow) * N + blockColStart + loadCol])[0];
+                blockB[loadRow][loadCol + 0] = tmpB.x;
+                blockB[loadRow][loadCol + 1] = tmpB.y;
+                blockB[loadRow][loadCol + 2] = tmpB.z;
+                blockB[loadRow][loadCol + 3] = tmpB.w;
+            } else {
+                blockB[loadRow][loadCol + 0] = 0; blockB[loadRow][loadCol + 1] = 0;
+                blockB[loadRow][loadCol + 2] = 0; blockB[loadRow][loadCol + 3] = 0;
+            }
+        }
+        __syncthreads();
+
+        #pragma unroll
+        for (int k = 0; k < BLOCK_SIZE; k++) {
+            float regA[TILE_SIZE];
+            float regB[TILE_SIZE];
+
+            #pragma unroll
+            for (int j = 0; j < TILE_SIZE; j++) {
+                regA[j] = blockA[tidy * TILE_SIZE + j][k];
+                regB[j] = blockB[k][tidx * TILE_SIZE + j];
+            }
+
+            #pragma unroll
+            for (int j = 0; j < TILE_SIZE; j++) {
+                #pragma unroll
+                for (int l = 0; l < TILE_SIZE; l++) {
+                    tileC[j][l] += regA[j] * regB[l];
+                }
+            }
+        }
+        __syncthreads();
+    }
+    
+    #pragma unroll
+    for (int j = 0; j < TILE_SIZE; j++) {
+        int finalRow = blockRowStart + tidy * TILE_SIZE + j;
+        if (finalRow < M) {
+            #pragma unroll
+            for (int l = 0; l < TILE_SIZE; l++) {
+                int finalCol = blockColStart + tidx * TILE_SIZE + l;
+                if (finalCol < N) {
+                    C[finalRow * N + finalCol] = tileC[j][l];
+                }
+            }
+        }
+    }
+}
+
+void LaunchVecGemm(const float* A, const float* B, float* C, int M, int N, int K, cudaStream_t stream) {
+    const dim3 block(BLOCK_SIZE / TILE_SIZE, BLOCK_SIZE / TILE_SIZE);
+    const dim3 grid((N + BLOCK_SIZE - 1) / BLOCK_SIZE, (M + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    VecGemmKernel<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+    CUDA_CHECK(cudaPeekAtLastError());
+}
+```
+
+**最终结果** 8405 GFLOPS，约为cuBlas的69.92%，相比naive实现提升了34.31倍。
+
+<img width="617" height="211" alt="Image" src="https://github.com/user-attachments/assets/34f84d5a-9065-49da-8323-cc7eb33800f4" />
