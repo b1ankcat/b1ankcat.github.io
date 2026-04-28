@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    <script src='https://blog.meekdai.com/Gmeek/plugins/GmeekVercount.js'></script>
+    <link rel="icon" href="https://github.githubassets.com/favicons/favicon.svg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="### 矩阵setup
+
+1. 使用NVIDIA V100S-PCIE-32GB测试
+2. 行优先存储
+3. shape为4096 x 4096
+4. 大小为 128 MB，远大于shared memory
+5. A矩阵为m行k列，B矩阵为k行n列，矩阵乘的结果C矩阵为m行n列
+6. 峰值算力公式为 FP32-15.7 TFLOPS，FP16-125 TFLOPS
+
+---
+### 0. 朴素矩阵乘kernel实现
+
+```cu
+constexpr int BLOCK_SIZE = 32;
+
+__global__ void NaiveGemmKernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    uint32_t row = blockIdx.x * blockDim.x + threadIdx.x;
+    uint32_t col = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (row < M && col < N) {
+        float tmp = 0.0f;
+        for (uint32_t i = 0; i < K; i++) {
+            tmp += A[row * K + i] * B[i * N + col];
+        }
+
+        C[row * N + col] = tmp;
+    }
+}
+
+void LaunchNaiveGemm(const float* A, const float* B, float* C, int M, int N, int K, cudaStream_t stream) {
+  const dim3 block(BLOCK_SIZE, BLOCK_SIZE);
+  const dim3 grid((M + BLOCK_SIZE - 1) / BLOCK_SIZE, (N + BLOCK_SIZE - 1) / BLOCK_SIZE);
+  NaiveGemmKernel<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+  CUDA_CHECK(cudaPeekAtLastError());
+}
+
+```
+
+&emsp;&emsp;注意，在这里使用了行m为BlockX，列n为BlockY，因此是对m和n进行了并行，对每个thread只需要考虑计算k即可，并且BlockX是threadIdx中优先变化的，当x变化到blockDim-1时，y才会加1，也就是对二维并行来说变化效果是(0,0),(1,0),...,(m,0),(0,1),(1,1),...,(m,1),...。">
+<meta property="og:title" content="GPU架构下的矩阵乘法深入优化">
+<meta property="og:description" content="### 矩阵setup
+
+1. 使用NVIDIA V100S-PCIE-32GB测试
+2. 行优先存储
+3. shape为4096 x 4096
+4. 大小为 128 MB，远大于shared memory
+5. A矩阵为m行k列，B矩阵为k行n列，矩阵乘的结果C矩阵为m行n列
+6. 峰值算力公式为 FP32-15.7 TFLOPS，FP16-125 TFLOPS
+
+---
+### 0. 朴素矩阵乘kernel实现
+
+```cu
+constexpr int BLOCK_SIZE = 32;
+
+__global__ void NaiveGemmKernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    uint32_t row = blockIdx.x * blockDim.x + threadIdx.x;
+    uint32_t col = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (row < M && col < N) {
+        float tmp = 0.0f;
+        for (uint32_t i = 0; i < K; i++) {
+            tmp += A[row * K + i] * B[i * N + col];
+        }
+
+        C[row * N + col] = tmp;
+    }
+}
+
+void LaunchNaiveGemm(const float* A, const float* B, float* C, int M, int N, int K, cudaStream_t stream) {
+  const dim3 block(BLOCK_SIZE, BLOCK_SIZE);
+  const dim3 grid((M + BLOCK_SIZE - 1) / BLOCK_SIZE, (N + BLOCK_SIZE - 1) / BLOCK_SIZE);
+  NaiveGemmKernel<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+  CUDA_CHECK(cudaPeekAtLastError());
+}
+
+```
+
+&emsp;&emsp;注意，在这里使用了行m为BlockX，列n为BlockY，因此是对m和n进行了并行，对每个thread只需要考虑计算k即可，并且BlockX是threadIdx中优先变化的，当x变化到blockDim-1时，y才会加1，也就是对二维并行来说变化效果是(0,0),(1,0),...,(m,0),(0,1),(1,1),...,(m,1),...。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://b1ankcat.github.io/post/GPU-jia-gou-xia-de-ju-zhen-cheng-fa-shen-ru-you-hua.html">
+<meta property="og:image" content="https://github.githubassets.com/favicons/favicon.svg">
+<title>GPU架构下的矩阵乘法深入优化</title>
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+.copy-feedback {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 50px;
+    color: var(--color-fg-on-emphasis);
+    background-color: var(--color-fg-muted);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+}
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">GPU架构下的矩阵乘法深入优化</h1>
+<div class="title-right">
+    <a href="https://b1ankcat.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/b1ankcat/b1ankcat.github.io/issues/2" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><h3>矩阵setup</h3>
+<ol>
+<li>使用NVIDIA V100S-PCIE-32GB测试</li>
+<li>行优先存储</li>
+<li>shape为4096 x 4096</li>
+<li>大小为 128 MB，远大于shared memory</li>
+<li>A矩阵为m行k列，B矩阵为k行n列，矩阵乘的结果C矩阵为m行n列</li>
+<li>峰值算力公式为 FP32-15.7 TFLOPS，FP16-125 TFLOPS</li>
+</ol>
+<hr>
+<h3>0. 朴素矩阵乘kernel实现</h3>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BLOCK_SIZE = <span class="pl-c1">32</span>;
+
+<span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">NaiveGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
+    <span class="pl-c1">uint32_t</span> row = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">x</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
+    <span class="pl-c1">uint32_t</span> col = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">y</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span>;
+
+    <span class="pl-k">if</span> (row &lt; M &amp;&amp; col &lt; N) {
+        <span class="pl-k">float</span> tmp = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; K; i++) {
+            tmp += A[row * K + i] * B[i * N + col];
+        }
+
+        C[row * N + col] = tmp;
+    }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">LaunchNaiveGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(BLOCK_SIZE, BLOCK_SIZE);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((M + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE, (N + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE);
+  NaiveGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
+  <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
+}
+</pre></div>
+<p>  注意，在这里使用了行m为BlockX，列n为BlockY，因此是对m和n进行了并行，对每个thread只需要考虑计算k即可，并且BlockX是threadIdx中优先变化的，当x变化到blockDim-1时，y才会加1，也就是对二维并行来说变化效果是(0,0),(1,0),...,(m,0),(0,1),(1,1),...,(m,1),...。</p>
+<p>  对每个(x,y)坐标对来说，都需要在内部循环计算k，比如需要计算从(x, 0)到(x, k)和(0, y)到(k, y)的乘加，当计算完内部的k循环后，x加1，变成计算从(x+1, 0)到(x+1, k)和(0, y)到(k, y)的乘加，这个过程中x从0到m的计算，y都是不变的，索引变化如图。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/92d04125-9fa4-471f-b02e-01607b2def59"><img width="812" height="708" alt="Image" src="https://github.com/user-attachments/assets/92d04125-9fa4-471f-b02e-01607b2def59" style="max-width: 100%; height: auto; max-height: 708px;; aspect-ratio: 812 / 708; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<p>  一定要记住 <strong>GPU是并行</strong> 的，可以这么理解，GPU的 $m \times n$ 个线程在同一时刻完成了K循环的同一步，K循环是一个时间的步数，每一步里都有 $m \times k$个线程在访存和运算。</p>
+<p>  因此这个时刻对A矩阵来说就是获取了从(0,k)到(m,k)的一列数据，一列数据需要访存m次，一共k列，就是 $m \times k$ 次访存，这个时刻对B矩阵来说就是获取了(k,y)这一个数据，一共需要访问k行，就是 $k$ 次访存。A矩阵和B矩阵加起来进行了 $k + m \times k$ 次访存。</p>
+<p><strong>最终结果</strong>  245 GFLOPS，约为cuBlas的2%。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/7561f6f6-6e18-49cf-9f2a-3f5a3316e908"><img width="589" height="212" alt="Image" src="https://github.com/user-attachments/assets/7561f6f6-6e18-49cf-9f2a-3f5a3316e908" style="max-width: 100%; height: auto; max-height: 212px;; aspect-ratio: 589 / 212; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<hr>
+<h3>1. y优先kernel实现</h3>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BLOCK_SIZE = <span class="pl-c1">32</span>;
+
+<span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">YfirstGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
+    <span class="pl-c1">uint32_t</span> col = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">x</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
+    <span class="pl-c1">uint32_t</span> row = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">y</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span>;
+
+    <span class="pl-k">if</span> (row &lt; M &amp;&amp; col &lt; N) {
+        <span class="pl-k">float</span> tmp = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; K; i++) {
+            tmp += A[row * K + i] * B[i * N + col];
+        }
+
+        C[row * N + col] = tmp;
+    }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">LaunchYfirstGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(BLOCK_SIZE, BLOCK_SIZE);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE, (M + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE);
+  YfirstGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
+  <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
+}
+
+</pre></div>
+<p>  使用列n为BlockX，行m为BlockY，这时列变成了threadIdx中优先变化的量，也就是先计算从(y, 0)到(y, k)和(0, x)到(k, x)的乘加，当计算完内部的k循环后，x加1，变成计算从(y, 0)到(y, k)和(0, x+1)到(k, x+1)的乘加，索引变化如图。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/00dcfb25-d387-4528-bd67-b4af06d85fb8"><img width="851" height="710" alt="Image" src="https://github.com/user-attachments/assets/00dcfb25-d387-4528-bd67-b4af06d85fb8" style="max-width: 100%; height: auto; max-height: 710px;; aspect-ratio: 851 / 710; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<p>  在这种情况下，GPU在同一时刻完成K循环的同一步，这个时刻对A矩阵来说就是获取了(y,k)这一个数据，一共需要访问m行，就是 $m$ 次访存，这个时刻对B矩阵来说就是获取了从(k,0)到(k,n)的一行数据，yfirst的 <strong>优化点</strong> 就在这，由于同一个GPU时间刻的连续thread在访问连续数据，因此会按warp合并访问，一次访存就可以访问32B数据即8个FP32数据，一行数据需要访存 $n \div 8$ 次，一共k行，就是 $\frac{n \times k}{8}$ 次访存。A矩阵和B矩阵加起来进行了 $m + \frac{n \times k}{8}$ 次访存。</p>
+<p>  由于本示例中 $m = n = k$，因此理论上性能相比naive实现会提升8倍。</p>
+<p><strong>最终结果</strong>  1894 GFLOPS，约为cuBlas的15%，可以看到，实际上相比naive实现提升了7.73倍，也就是约8倍。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/bee89804-f51c-4e19-8395-f7881ce6ecae"><img width="583" height="211" alt="Image" src="https://github.com/user-attachments/assets/bee89804-f51c-4e19-8395-f7881ce6ecae" style="max-width: 100%; height: auto; max-height: 211px;; aspect-ratio: 583 / 211; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<hr>
+<h3>2. shared memory kernel实现</h3>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BLOCK_SIZE = <span class="pl-c1">32</span>;
+
+<span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">SharedGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockA[BLOCK_SIZE * BLOCK_SIZE];
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockB[BLOCK_SIZE * BLOCK_SIZE];
+
+    <span class="pl-c1">uint32_t</span> blockARow = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">y</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span>;
+    <span class="pl-c1">uint32_t</span> blockBCol = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">x</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
+
+    <span class="pl-k">if</span> (blockARow &lt; M &amp;&amp; blockBCol &lt; N) {
+        <span class="pl-k">float</span> tmp = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; (K + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE; i++) {
+            <span class="pl-k">int</span> blockACol = i * BLOCK_SIZE + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
+            <span class="pl-k">int</span> blockBRow = i * BLOCK_SIZE + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span>;
+
+            <span class="pl-k">int</span> innerRow = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * BLOCK_SIZE;
+            <span class="pl-k">int</span> innerCol = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
+
+            blockA[innerRow + innerCol] = (blockACol &lt; K) ? A[blockARow * K + blockACol] : <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+            blockB[innerRow + innerCol] = (blockBRow &lt; K) ? B[blockBRow * N + blockBCol] : <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+
+            <span class="pl-c1">__syncthreads</span>();
+
+            <span class="pl-k">for</span> (<span class="pl-c1">int32_t</span> j = <span class="pl-c1">0</span>; j &lt; BLOCK_SIZE; j++) {
+                tmp += blockA[innerRow + j] * blockB[j * BLOCK_SIZE + innerCol];
+            }
+            <span class="pl-c1">__syncthreads</span>();
+        }
+
+        C[blockARow * N + blockBCol] = tmp;
+    }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">LaunchSharedGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(BLOCK_SIZE, BLOCK_SIZE);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE, (M + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE);
+    SharedGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
+    <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
+}</pre></div>
+<p>  由于shared memory的速度远大于global memory，因此我们在一个block内先用shared memory缓存该block的所有数据，然后再进行计算，计算时只会读写shared memory，最后再将结果写回global memory。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/d130bd02-ae35-4c31-bea7-454b5efc7000"><img width="815" height="718" alt="Image" src="https://github.com/user-attachments/assets/d130bd02-ae35-4c31-bea7-454b5efc7000" style="max-width: 100%; height: auto; max-height: 718px;; aspect-ratio: 815 / 718; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<p>  由于使用了行m为BlockX，列n为BlockY，k进行内循环，因此对k不会再一个一个计算，而是以block长度统一计算。</p>
+<p>  首先要找到每个block的起点位置，对A矩阵来说，由于其block的起点行就是blockIdx.y * blockDim.y，这只是找到了block的起点行，为了找到thread还要加上threadIdx.y，而A矩阵的block起点列则需要通过内循环的K来获得，同样地，还要加上threadIdx.x定位thread。</p>
+<p>  对B矩阵来说，其block的起点行需要通过内循环的K来获得，为了定位thread需要加上threadIdx.y，而B矩阵的block的起点列则是blockIdx.x * blockDim.x，同样地，还要加上threadIdx.x定位thread。</p>
+<p>  要时刻注意，<strong>GPU是并行的</strong>，什么意思呢？看下面这个代码：</p>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate">blockA[innerRow + innerCol] = A[blockARow * K + blockACol];</pre></div>
+<p>  这里只获取了一个地址的值，为什么就对整个blockA赋值完成了？原因就在于blockARow中有threadIdx.y，而blockACol中有threadIdx.x，GPU是并行的，也就是在第K个时间步中同时对 $blockIdx.x \times threadIdx.x$ 个地址取值，那么就对整个blockA赋值了。blockB同理。</p>
+<p>  当进入到K+1个时间步时，A矩阵的blockARow没变，但是blockACol向右移动了整个BLOCK_SIZE，B矩阵的blockBCol没变，但是blockBRow向下移动了整个BLOCK_SIZE，此时获得的 $blockIdx.x \times threadIdx.x$ 个地址的值覆盖了blockA和blockB，进入了下一轮计算。</p>
+<p>  回到第K个时间步，由于GPU对整个block同时取值了，那么计算也需要对整个block进行计算，计算后的值临时存储在tmp中，进行所有时间步后也就计算完毕了A的K列和B的K行数据，此时再写回C矩阵即可。</p>
+<p>  这里又有一个问题：对整个block计算为什么只需要一个临时变量就可以了？不应该需要BLOCK_SIZE个吗？因为<strong>GPU是并行的</strong>，对blockA和blockB取值时用的innerRow和innerCol也有threadIdx，因此实际上在这个时间步是一整个BLOCK_SIZE在进行计算，使用的tmp变量是block那么多个thread自身私有的临时变量。</p>
+<p>  看上去for j循环是在进行blockA一行和blockB一列的计算，实际上innerRow和innerCol都是并行的，也就是for j循环是在同时对blockA的所有行和blockB的所有列进行计算，每一个j的时间步中，取得blockA的所有行的值和blockB的所有列的值进行乘加操作再放回各自thread的私有tmp变量中，当完成for j循环后，整个block的矩阵乘法就全部算出来了，并且每个对应位置的thread的私有tmp变量就存放着对应block位置的结果值，将其写回C即可完成计算。</p>
+<p>  shared memory的提升来源于多个方面，首先是A 和 B block 被缓存，只在global memory中访问一次，其次是内部计算全在寄存器和shared memory中，最后是warp内线程可以并行累加同一 block的元素。同时我们还可以看到，在x增加的过程中y是不变的，也就是说，x的每个值都会获取一次y的数据，x一共有n个，就会重复获取n次y的数据，当x增长到n-1之后，y才会加1，这是下一个优化点的问题来源。</p>
+<p><strong>最终结果</strong> 3322 GFLOPS，约为cuBlas的27%，相比naive实现提升了13.56倍。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/f1e9ff3e-9608-4ac0-9454-52b2b03960f0"><img width="587" height="216" alt="Image" src="https://github.com/user-attachments/assets/f1e9ff3e-9608-4ac0-9454-52b2b03960f0" style="max-width: 100%; height: auto; max-height: 216px;; aspect-ratio: 587 / 216; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<hr>
+<h3>3. tiling block kernel实现</h3>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BLOCK_SIZE = <span class="pl-c1">32</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> TILE_SIZE = <span class="pl-c1">4</span>;
+
+<span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">TilingGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockA[BLOCK_SIZE][BLOCK_SIZE];
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockB[BLOCK_SIZE][BLOCK_SIZE];
+    <span class="pl-k">float</span> tileC[TILE_SIZE][TILE_SIZE] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};
+    
+    <span class="pl-c1">uint32_t</span> blockARowStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * BLOCK_SIZE;
+    <span class="pl-c1">uint32_t</span> blockBColStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * BLOCK_SIZE;
+
+    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; (K + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE; i++) {
+        <span class="pl-k">int</span> blockAColStart = i * BLOCK_SIZE;
+        <span class="pl-k">int</span> blockBRowStart = i * BLOCK_SIZE;
+        
+        #<span class="pl-k">pragma</span> unroll
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+            <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
+                <span class="pl-k">int</span> innerRow = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j;
+                <span class="pl-k">int</span> innerCol = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k;
+
+                <span class="pl-k">if</span> ((blockARowStart + innerRow) &lt; M &amp;&amp; (blockAColStart + innerCol) &lt; K)
+                    blockA[innerRow][innerCol] = A[(blockARowStart + innerRow) * K + blockAColStart + innerCol];
+                <span class="pl-k">else</span>
+                    blockA[innerRow][innerCol] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                
+                <span class="pl-k">if</span> ((blockBRowStart + innerRow) &lt; K &amp;&amp; (blockBColStart + innerCol) &lt; N)
+                    blockB[innerRow][innerCol] = B[(blockBRowStart + innerRow) * N + blockBColStart + innerCol];
+                <span class="pl-k">else</span>
+                    blockB[innerRow][innerCol] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+            }
+        }
+        <span class="pl-c1">__syncthreads</span>();
+
+        #<span class="pl-k">pragma</span> unroll
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> dotIdx = <span class="pl-c1">0</span>; dotIdx &lt; BLOCK_SIZE; dotIdx++) {
+            #<span class="pl-k">pragma</span> unroll
+            <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+                #<span class="pl-k">pragma</span> unroll
+                <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
+                    tileC[j][k] += blockA[<span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j][dotIdx] * blockB[dotIdx][<span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k];
+                }
+            }
+        }
+        <span class="pl-c1">__syncthreads</span>();
+    }
+    
+    #<span class="pl-k">pragma</span> unroll
+    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
+            <span class="pl-k">int</span> finalRow = blockARowStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j;
+            <span class="pl-k">int</span> finalCol = blockBColStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k;
+            <span class="pl-k">if</span> (finalRow &lt; M &amp;&amp; finalCol &lt; N) {
+                C[finalRow * N + finalCol] = tileC[j][k];
+            }
+        }
+    }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">LaunchTilingGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(BLOCK_SIZE / TILE_SIZE, BLOCK_SIZE / TILE_SIZE);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE, (M + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE);
+    TilingGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
+    <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
+}</pre></div>
+<p>  在shared memory gemm kernel中，每个thread为了执行一次计算需要从shread memory中读取2个float，此时的计算访存比是1:2，虽然shread memory很快，但是当所有线程都在进行高频小数据读取时，shread memory的带宽还是很容易成为瓶颈，因此为了提高对shread memory的访存比，我们模仿shread memory缓存global memory的方式，用registers来缓存shread memory。</p>
+<p>  这个方法被称为Tiling算法，也就是在Block中再划分出一个小Block成为Tile，每个线程现在不再只计算一个元素，而是对这个Tile的所有元素进行计算，我们设定的Tile大小是4，也就是16次计算，这时只需要8次访存，计算访存比达到了2:1，相比shared memory提升了四倍，其索引取值如图所示。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/dc5b9aad-7ea2-479d-8436-cf440aac6001"><img width="1077" height="1053" alt="Image" src="https://github.com/user-attachments/assets/dc5b9aad-7ea2-479d-8436-cf440aac6001" style="max-width: 100%; height: auto; max-height: 1053px;; aspect-ratio: 1077 / 1053; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<p>  可以看到，先用blockIdx来定位Block的起点，由于blockIdx是在M和N上并行，而K是内部并行，用blockIdx.y和K来定位Block A的起点坐标，用K和blockIdx.x来定位Block B的起点坐标。另一方面，由于每个线程不再只计算一个元素，而是计算TILE_SIZE长宽高的Tile，因此blockDim也不再是BLOCK_SIZE了，而是BLOCK_SIZE / TILE_SIZE，由于这个原因，在定位Block起点的时候就不能乘以blockDim了，因为在逻辑上每个Block还是处理了BLOCK_SIZE长宽高的数据，只是blockDim保存的BLOCK_SIZE / TILE_SIZE，所以BlockStart是用blockIdx * BLOCK_SIZE表示。</p>
+<p>  在加载一个Block数据到shared memory中时，依然对K进行内循环，通过K来确定Block A的列坐标和Block B的heng坐标，这样就能获取Block的左上角起点坐标了。</p>
+<p>  下一步是获取Block内部每个Tile的左上角起点坐标。由于每个Block现在不再有BLOCK_SIZE个thread，而是BLOCK_SIZE / TILE_SIZE个thread，每个threadY要处理TILE_SIZE行，每个threadX要处理TILE_SIZE列，因此每个Tile的左上角起点坐标就是threadIdx * TILE_SIZE的坐标。</p>
+<p>  现在可以加载数据了，加载用的for j和for k循环次数用的常数TILE_SIZE，也就是GPU会执行TILE_SIZE * TILE_SIZE次加载，每一个时间步中，所有thread同时对整个Block的所有Tile加载一个元素，执行完时间步后就加载完了整个Block，此时的加载逻辑就只需要将shared memory的Block和A矩阵、B矩阵的对应地址元素对应即可。</p>
+<p>  对加载来说，每个thread都是从tile的左上角开始，每个时间步移动一个元素，经过TILE_SIZE*TILE_SIZE个时间步后加载完正片Tile，每个时间步中threadX和threadY并发进行，也就是同时对一个Block的所有Tile进行加载，并且在每个时间步中同时对A矩阵和B矩阵进行加载。</p>
+<p>  而到了计算的时候，tileC其实是每个thread私有的一片reg空间，并且是计算的是最后的结果，那么每个对应tileC[j][k]的位置都需要一整行的blockA和一整列的blockB才能得到最后结果，并且每个thread需要计算TILE_SIZE次，因此还需要进行for dotIdx循环BLOCK_SIZE次，才能获取K轴的全部数据，并且每个线程计算了整个Tile的结果。</p>
+<p>  具体到代码中来说，每个thread在循环中计算blockA的对应Tile的第j行所有数据，因此第一个维度填写j，而第二个维度填写dotIdx，因为blockA在行维度并行，因此第一个维度还要加上threadIdx.y * TILE_SIZE来定位具体的Tile。同理，对blockB来说计算对应Tile的第k列所有数据，因此第一个维度填写dotIdx，而第二个维度填写k加上列并行的threadIdx.x * TILE_SIZE。</p>
+<p>  以GPU并行的视角来看，相当于每个thread进行了BLOCK_SIZE次TILE_SIZE * TILE_SIZE个时间步，在每个时间步中，每进行BLOCK_SIZE次时间步，thread就会计算出Block中所有Tile的一个值，一共进行TILE_SIZE * TILE_SIZE次BLOCK_SIZE时间步最终计算完Block中所有Tile的所有值，在BLOCK_SIZE次时间步中，thread是在对block的K轴数据进行乘加，而在TILE_SIZE * TILE_SIZE时间步中，thread是在计算需要完成的TILE_SIZE行TILE_SIZE列数据。</p>
+<p>  最后需要将数据写回global memory，此时对应Block的对应Tile的数据就是正确数据了，因此不用再对K轴进行内部循环，直接将对应thread的Tile值放回C矩阵即可，同样地，所有thread会在同一时刻对Block内的所有Tile进行写回操作，只需要进行TILE_SIZE * TILE_SIZE次时间步就可以完成Block内所有Tile的所有元素写回。</p>
+<p><strong>最终结果</strong> 4401 GFLOPS，约为cuBlas的31.84%，相比naive实现提升了17.96倍。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/0f99255a-a341-4837-b70a-ff5e8b7b3ce1"><img width="577" height="211" alt="Image" src="https://github.com/user-attachments/assets/0f99255a-a341-4837-b70a-ff5e8b7b3ce1" style="max-width: 100%; height: auto; max-height: 211px;; aspect-ratio: 577 / 211; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<hr>
+<h3>4. vector load kernel实现</h3>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BLOCK_SIZE = <span class="pl-c1">32</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> TILE_SIZE = <span class="pl-c1">4</span>;
+
+<span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">VecGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockA[BLOCK_SIZE][BLOCK_SIZE + <span class="pl-c1">1</span>];
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockB[BLOCK_SIZE][BLOCK_SIZE + <span class="pl-c1">1</span>];
+    <span class="pl-k">float</span> tileC[TILE_SIZE][TILE_SIZE] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};
+
+    <span class="pl-c1">uint32_t</span> blockARowStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * BLOCK_SIZE;
+    <span class="pl-c1">uint32_t</span> blockBColStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * BLOCK_SIZE;
+    
+    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; (K + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE; i++) {
+        <span class="pl-k">int</span> blockAColStart = i * BLOCK_SIZE;
+        <span class="pl-k">int</span> blockBRowStart = i * BLOCK_SIZE;
+
+        #<span class="pl-k">pragma</span> unroll
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+            <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE / <span class="pl-c1">4</span>; k++) {
+                <span class="pl-k">int</span> innerRow = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j;
+                <span class="pl-k">int</span> innerCol = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k * <span class="pl-c1">4</span>;
+
+                <span class="pl-k">if</span> ((blockARowStart + innerRow) &lt; M &amp;&amp; (blockAColStart + innerCol) &lt; K){
+                    <span class="pl-c1">float4</span> tmpA = <span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">float4</span>*&gt;(&amp;A[(blockARowStart + innerRow) * K + blockAColStart + innerCol])[<span class="pl-c1">0</span>];
+                    blockA[innerRow][innerCol + <span class="pl-c1">0</span>] = tmpA.<span class="pl-smi">x</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">1</span>] = tmpA.<span class="pl-smi">y</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">2</span>] = tmpA.<span class="pl-smi">z</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">3</span>] = tmpA.<span class="pl-smi">w</span>;
+                }
+                <span class="pl-k">else</span>{
+                    blockA[innerRow][innerCol + <span class="pl-c1">0</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">1</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">2</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockA[innerRow][innerCol + <span class="pl-c1">3</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                }
+                
+                <span class="pl-k">if</span> ((blockBRowStart + innerRow) &lt; K &amp;&amp; (blockBColStart + innerCol) &lt; N){
+                    <span class="pl-c1">float4</span> tmpB = <span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">float4</span>*&gt;(&amp;B[(blockBRowStart + innerRow) * N + blockBColStart + innerCol])[<span class="pl-c1">0</span>];
+                    blockB[innerRow][innerCol + <span class="pl-c1">0</span>] = tmpB.<span class="pl-smi">x</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">1</span>] = tmpB.<span class="pl-smi">y</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">2</span>] = tmpB.<span class="pl-smi">z</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">3</span>] = tmpB.<span class="pl-smi">w</span>;
+                }
+                <span class="pl-k">else</span>{
+                    blockB[innerRow][innerCol + <span class="pl-c1">0</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">1</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">2</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                    blockB[innerRow][innerCol + <span class="pl-c1">3</span>] = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
+                }
+            }
+        }
+        <span class="pl-c1">__syncthreads</span>();
+
+        #<span class="pl-k">pragma</span> unroll
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> dotIdx = <span class="pl-c1">0</span>; dotIdx &lt; BLOCK_SIZE; dotIdx++) {
+            <span class="pl-k">float</span> regA[TILE_SIZE];
+            <span class="pl-k">float</span> regB[TILE_SIZE];
+
+            #<span class="pl-k">pragma</span> unroll
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+                regA[j] = blockA[<span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j][dotIdx];
+                regB[j] = blockB[dotIdx][<span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + j];
+            }
+
+            #<span class="pl-k">pragma</span> unroll
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+                #<span class="pl-k">pragma</span> unroll
+                <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
+                    tileC[j][k] += regA[j] * regB[k];
+                }
+            }
+        }
+        <span class="pl-c1">__syncthreads</span>();
+    }
+    
+    #<span class="pl-k">pragma</span> unroll
+    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
+            <span class="pl-k">int</span> finalRow = blockARowStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j;
+            <span class="pl-k">int</span> finalCol = blockBColStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k;
+            <span class="pl-k">if</span> (finalRow &lt; M &amp;&amp; finalCol &lt; N) {
+                C[finalRow * N + finalCol] = tileC[j][k];
+            }
+        }
+    }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">LaunchVecGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(BLOCK_SIZE / TILE_SIZE, BLOCK_SIZE / TILE_SIZE);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE, (M + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE);
+    VecGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
+    <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
+}</pre></div>
+<p>  首先，为了加速数据加载，我们使用 float4 进行矢量化。原本在 K 轴的循环需要进行 TILE_SIZE 次，现在每次可以一次性加载连续的 4 个 float，因此循环次数可除以 4，同时 innerCol 也按 stride 进行调整，每个线程一次性加载一行中的四列数据。</p>
+<p>  每个线程只需进行 TILE_SIZE 次循环，每次循环将对应 Tile 的一列 A 和一行 B 加载到寄存器中，然后执行外积计算。通过这种方式，每次循环就完成了 Tile 的一个时间步计算，即 (TILE_SIZE, 1) 与 (1, TILE_SIZE) 的乘法累加操作。经过 BLOCK_SIZE 次循环后，整个 Tile 的 K 轴累加完成，Tile 内所有元素的最终值也随之计算完成，从而完成矩阵乘法的一部分。</p>
+<p><strong>最终结果</strong> 7657 GFLOPS，约为cuBlas的60.34%，相比naive实现提升了31.25倍。</p>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/52cdf8d3-ce03-4ab6-a67d-d8bfbf49732d"><img width="618" height="213" alt="Image" src="https://github.com/user-attachments/assets/52cdf8d3-ce03-4ab6-a67d-d8bfbf49732d" style="max-width: 100%; height: auto; max-height: 213px;; aspect-ratio: 618 / 213; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<hr>
+<h3>5. warp tiling + double buffer kernel实现</h3>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"></pre></div>
+<p><strong>最终结果</strong> 7657 GFLOPS，约为cuBlas的60.34%，相比naive实现提升了31.25倍。</p></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://b1ankcat.github.io">RaspCat Home</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if("01/01/2026"!=""){
+    var startSite=new Date("01/01/2026");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行 "+diffDay+" 天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z', 'copy': 'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z', 'check': 'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.disabled=true;
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","b1ankcat/b1ankcat.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const createClipboardHTML = (codeContent, additionalClasses = '') => `
+        <pre class="notranslate"><code class="notranslate">${codeContent}</code></pre>
+        <div class="clipboard-container position-absolute right-0 top-0 ${additionalClasses}">
+            <clipboard-copy class="ClipboardButton btn m-2 p-0" role="button" style="display: inherit;">
+                <svg height="16" width="16" class="octicon octicon-copy m-2"><path d="${IconList["copy"]}"></path></svg>
+                <svg height="16" width="16" class="octicon octicon-check color-fg-success m-2 d-none"><path d="${IconList["check"]}"></path></svg>
+            </clipboard-copy>
+            <div class="copy-feedback">Copied!</div>
+        </div>
+    `;
+
+    const handleCodeElements = (selector = '') => {
+        document.querySelectorAll(selector).forEach(codeElement => {
+            const codeContent = codeElement.innerHTML;
+            const newStructure = document.createElement('div');
+            newStructure.className = 'snippet-clipboard-content position-relative overflow-auto';
+            newStructure.innerHTML = createClipboardHTML(codeContent);
+
+            const parentElement = codeElement.parentElement;
+            if (selector.includes('highlight')) {
+                parentElement.insertBefore(newStructure, codeElement.nextSibling);
+                parentElement.removeChild(codeElement);
+            } else {
+                parentElement.parentElement.replaceChild(newStructure, parentElement);
+            }
+        });
+    };
+
+    handleCodeElements('pre.notranslate > code.notranslate');
+    handleCodeElements('div.highlight > pre.notranslate');
+
+    let currentFeedback = null;
+    document.querySelectorAll('clipboard-copy').forEach(copyButton => {
+        copyButton.addEventListener('click', () => {
+            const codeContent = copyButton.closest('.snippet-clipboard-content').innerText;
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = codeContent;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempTextArea);
+
+            const copyIcon = copyButton.querySelector('.octicon-copy');
+            const checkIcon = copyButton.querySelector('.octicon-check');
+            const copyFeedback = copyButton.nextElementSibling;
+
+            if (currentFeedback && currentFeedback !== copyFeedback) {currentFeedback.style.display = 'none';}
+            currentFeedback = copyFeedback;
+
+            copyIcon.classList.add('d-none');
+            checkIcon.classList.remove('d-none');
+            copyFeedback.style.display = 'block';
+            copyButton.style.borderColor = 'var(--color-success-fg)';
+
+            setTimeout(() => {
+                copyIcon.classList.remove('d-none');
+                checkIcon.classList.add('d-none');
+                copyFeedback.style.display = 'none';
+                copyButton.style.borderColor = '';
+            }, 2000);
+        });
+    });
+});
+
+</script>
+<script src='https://blog.meekdai.com/Gmeek/plugins/articletoc.js'></script><script src='https://blog.meekdai.com/Gmeek/plugins/lightbox.js'><script>MathJax = {tex: {inlineMath: [["$", "$"]]}};</script><script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+</html>
