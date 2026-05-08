@@ -36,7 +36,7 @@ void LaunchNaiveGemm(const float* A, const float* B, float* C, int M, int N, int
 
 ```
 
-&emsp;&emsp;注意，在这里使用了行m为BlockX，列n为BlockY，因此是对m和n进行了并行，对每个thread只需要考虑计算k即可，并且BlockX是threadIdx中优先变化的，当x变化到blockDim-1时，y才会加1，也就是对二维并行来说变化效果是(0,0),(1,0),...,(m,0),(0,1),(1,1),...,(m,1),...。
+&emsp;&emsp;注意，在这里使用了列n为BlockX，行m为BlockY，因此是对m和n进行了并行，对每个thread只需要考虑计算k即可，并且BlockX是threadIdx中优先变化的，当x变化到blockDim-1时，y才会加1，也就是对二维并行来说变化效果是(0,0),(1,0),...,(m,0),(0,1),(1,1),...,(m,1),...。
 
 &emsp;&emsp;对每个(x,y)坐标对来说，都需要在内部循环计算k，比如需要计算从(x, 0)到(x, k)和(0, y)到(k, y)的乘加，当计算完内部的k循环后，x加1，变成计算从(x+1, 0)到(x+1, k)和(0, y)到(k, y)的乘加，这个过程中x从0到m的计算，y都是不变的，索引变化如图。
 
@@ -84,7 +84,7 @@ void LaunchYfirstGemm(const float* A, const float* B, float* C, int M, int N, in
 
 <img width="851" height="710" alt="Image" src="https://github.com/user-attachments/assets/00dcfb25-d387-4528-bd67-b4af06d85fb8" />
 
-&emsp;&emsp;在这种情况下，GPU在同一时刻完成K循环的同一步，这个时刻对A矩阵来说就是获取了(y,k)这一个数据，一共需要访问m行，就是 $m$ 次访存，这个时刻对B矩阵来说就是获取了从(k,0)到(k,n)的一行数据，yfirst的 **优化点** 就在这，由于同一个GPU时间刻的连续thread在访问连续数据，因此会按warp合并访问，一次访存就可以访问32B数据即8个FP32数据，一行数据需要访存 $n \div 8$ 次，一共k行，就是 $\frac{n \times k}{8}$ 次访存。A矩阵和B矩阵加起来进行了 $m + \frac{n \times k}{8}$ 次访存。
+&emsp;&emsp;在这种情况下，GPU在同一时刻完成K循环的同一步，这个时刻对A矩阵来说就是获取了(y,k)这一个数据，一共需要访问m行，就是 $m$ 次访存，这个时刻对B矩阵来说就是获取了从(k,0)到(k,n)的一行数据，yfirst的 **优化点** 就在这，由于同一个GPU时间刻的连续thread在访问连续数据，因此会按warp合并访问，一次访存就可以访问32B数据即8个FP32数据，一行数据需要访存 $n \div 8$ 次，一共k行，就是 $\frac{n \times k}{8}$ 次访存。A矩阵和B矩阵加起来进行了 $m + \frac{n \times k}{8}$ 次访存。（实际上，同一行内不同列的线程会重复读取同一个 A[row][k]，没有利用广播，且访问不连续导致无法合并，真实的全局内存访问量远大于这个简化模型）
 
 &emsp;&emsp;由于本示例中 $m = n = k$，因此理论上性能相比naive实现会提升8倍。
 
@@ -142,7 +142,7 @@ void LaunchSharedGemm(const float* A, const float* B, float* C, int M, int N, in
 
 <img width="815" height="718" alt="Image" src="https://github.com/user-attachments/assets/d130bd02-ae35-4c31-bea7-454b5efc7000" />
 
-&emsp;&emsp;由于使用了行m为BlockX，列n为BlockY，k进行内循环，因此对k不会再一个一个计算，而是以block长度统一计算。
+&emsp;&emsp;由于使用了列n为BlockX，行m为BlockY，k进行内循环，因此对k不会再一个一个计算，而是以block长度统一计算。
 
 &emsp;&emsp;首先要找到每个block的起点位置，对A矩阵来说，由于其block的起点行就是blockIdx.y * blockDim.y，这只是找到了block的起点行，为了找到thread还要加上threadIdx.y，而A矩阵的block起点列则需要通过内循环的K来获得，同样地，还要加上threadIdx.x定位thread。
 
@@ -378,6 +378,185 @@ void LaunchVecGemm(const float* A, const float* B, float* C, int M, int N, int K
 ### 5. warp tiling + double buffer kernel实现
 
 ```cu
+constexpr int BM = 128; // Block M
+constexpr int BN = 128; // Block N
+constexpr int BK = 8;   // Block K
+constexpr int WM = 64;  // Warp M
+constexpr int WN = 32;  // Warp N
+constexpr int TM = 8;   // Thread M
+constexpr int TN = 8;   // Thread N
+constexpr int NUM_THREADS = 256; 
+
+__global__ void WarpTiledDoubleBufferGemmKernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    // 为了避免 Bank Conflict，将 A 转置存入 Shared Memory，B 保持正常布局
+    __shared__ float sA[2][BK][BM];
+    __shared__ float sB[2][BK][BN];
+
+    const int tid = threadIdx.x;
+    const int bx = blockIdx.x; // Block Col -> N
+    const int by = blockIdx.y; // Block Row -> M
+
+    const int warpId = tid / 32;
+    const int laneId = tid % 32;
+    const int warpRow = warpId / 4;  // 8 个 Warp 在 Block 内的排列: 2(M) x 4(N)
+    const int warpCol = warpId % 4;
+    const int laneRow = laneId / 4;  // Warp 内 32 个线程的排列: 8(M) x 4(N)
+    const int laneCol = laneId % 4;
+    const int rowC = by * BM + warpRow * WM + laneRow * TM;  // 计算当前线程负责的 Global C 矩阵的起始坐标
+    const int colC = bx * BN + warpCol * WN + laneCol * TN;
+
+    float regC[TM][TN] = {0.0f}; // 累加器 C
+    float regA[TM] = {0.0f};     // 缓存 A
+    float regB[TN] = {0.0f};     // 缓存 B
+
+    // A 矩阵块尺寸 128x8，共 1024 个元素，256 线程每人读 4 个 (1 个 float4)
+    const int aLoadRow = tid / 2;         // 0~127
+    const int aLoadCol = (tid % 2) * 4;   // 0 或 4
+    
+    // B 矩阵块尺寸 8x128，共 1024 个元素，256 线程每人读 4 个 (1 个 float4)
+    const int bLoadRow = tid / 32;        // 0~7
+    const int bLoadCol = (tid % 32) * 4;  // 0, 4, 8... 124
+
+    int write_stage = 0;
+    int read_stage = 0;
+    int global_k = 0;
+    
+    int a_gRow = by * BM + aLoadRow;
+    int a_gCol = global_k + aLoadCol;
+    if (a_gRow < M && a_gCol < K) {
+        float4 tmpA = reinterpret_cast<const float4*>(&A[a_gRow * K + a_gCol])[0];
+        // 存入 Shared Memory 时进行转置：[k][m]
+        sA[write_stage][aLoadCol + 0][aLoadRow] = tmpA.x;
+        sA[write_stage][aLoadCol + 1][aLoadRow] = tmpA.y;
+        sA[write_stage][aLoadCol + 2][aLoadRow] = tmpA.z;
+        sA[write_stage][aLoadCol + 3][aLoadRow] = tmpA.w;
+    } else {
+        sA[write_stage][aLoadCol + 0][aLoadRow] = 0.0f;
+        sA[write_stage][aLoadCol + 1][aLoadRow] = 0.0f;
+        sA[write_stage][aLoadCol + 2][aLoadRow] = 0.0f;
+        sA[write_stage][aLoadCol + 3][aLoadRow] = 0.0f;
+    }
+
+    int b_gRow = global_k + bLoadRow;
+    int b_gCol = bx * BN + bLoadCol;
+    if (b_gRow < K && b_gCol < N) {
+        float4 tmpB = reinterpret_cast<const float4*>(&B[b_gRow * N + b_gCol])[0];
+        sB[write_stage][bLoadRow][bLoadCol + 0] = tmpB.x;
+        sB[write_stage][bLoadRow][bLoadCol + 1] = tmpB.y;
+        sB[write_stage][bLoadRow][bLoadCol + 2] = tmpB.z;
+        sB[write_stage][bLoadRow][bLoadCol + 3] = tmpB.w;
+    } else {
+        sB[write_stage][bLoadRow][bLoadCol + 0] = 0.0f;
+        sB[write_stage][bLoadRow][bLoadCol + 1] = 0.0f;
+        sB[write_stage][bLoadRow][bLoadCol + 2] = 0.0f;
+        sB[write_stage][bLoadRow][bLoadCol + 3] = 0.0f;
+    }
+    __syncthreads();
+
+    for (global_k = 0; global_k < K; global_k += BK) {
+        // 切换写入 stage 缓冲区
+        write_stage ^= 1;
+        
+        // 如果不是最后一个块，预取下一个 Block 的数据
+        int next_k = global_k + BK;
+        if (next_k < K) {
+            a_gCol = next_k + aLoadCol;
+            if (a_gRow < M && a_gCol < K) {
+                float4 tmpA = reinterpret_cast<const float4*>(&A[a_gRow * K + a_gCol])[0];
+                sA[write_stage][aLoadCol + 0][aLoadRow] = tmpA.x;
+                sA[write_stage][aLoadCol + 1][aLoadRow] = tmpA.y;
+                sA[write_stage][aLoadCol + 2][aLoadRow] = tmpA.z;
+                sA[write_stage][aLoadCol + 3][aLoadRow] = tmpA.w;
+            } else {
+                sA[write_stage][aLoadCol + 0][aLoadRow] = 0.0f;
+                sA[write_stage][aLoadCol + 1][aLoadRow] = 0.0f;
+                sA[write_stage][aLoadCol + 2][aLoadRow] = 0.0f;
+                sA[write_stage][aLoadCol + 3][aLoadRow] = 0.0f;
+            }
+
+            b_gRow = next_k + bLoadRow;
+            if (b_gRow < K && b_gCol < N) {
+                float4 tmpB = reinterpret_cast<const float4*>(&B[b_gRow * N + b_gCol])[0];
+                sB[write_stage][bLoadRow][bLoadCol + 0] = tmpB.x;
+                sB[write_stage][bLoadRow][bLoadCol + 1] = tmpB.y;
+                sB[write_stage][bLoadRow][bLoadCol + 2] = tmpB.z;
+                sB[write_stage][bLoadRow][bLoadCol + 3] = tmpB.w;
+            } else {
+                sB[write_stage][bLoadRow][bLoadCol + 0] = 0.0f;
+                sB[write_stage][bLoadRow][bLoadCol + 1] = 0.0f;
+                sB[write_stage][bLoadRow][bLoadCol + 2] = 0.0f;
+                sB[write_stage][bLoadRow][bLoadCol + 3] = 0.0f;
+            }
+        }
+
+        // Warp 内的外积计算 (计算当前 read_stage 缓冲内的数据)
+        #pragma unroll
+        for (int k = 0; k < BK; k++) {
+            #pragma unroll
+            for (int i = 0; i < TM; i++) {
+                regA[i] = sA[read_stage][k][warpRow * WM + laneRow * TM + i];
+            }
+            #pragma unroll
+            for (int j = 0; j < TN; j++) {
+                regB[j] = sB[read_stage][k][warpCol * WN + laneCol * TN + j];
+            }
+
+            // 外积计算：regC += regA * regB
+            #pragma unroll
+            for (int i = 0; i < TM; i++) {
+                #pragma unroll
+                for (int j = 0; j < TN; j++) {
+                    regC[i][j] += regA[i] * regB[j];
+                }
+            }
+        }
+        __syncthreads(); 
+        
+        // 翻转读取缓冲区，供下一个迭代使用
+        read_stage ^= 1; 
+    }
+
+    #pragma unroll
+    for (int i = 0; i < TM; i++) {
+        int gRow = rowC + i;
+        if (gRow < M) {
+            #pragma unroll
+            for (int j = 0; j < TN; j++) {
+                int gCol = colC + j;
+                if (gCol < N) {
+                    C[gRow * N + gCol] = regC[i][j];
+                }
+            }
+        }
+    }
+}
+
+void LaunchWarpTiledDoubleBufferGemm(const float* A, const float* B, float* C, int M, int N, int K, cudaStream_t stream) {
+    const dim3 block(NUM_THREADS);
+    const dim3 grid((N + BN - 1) / BN, (M + BM - 1) / BM);
+    WarpTiledDoubleBufferGemmKernel<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+    CUDA_CHECK(cudaPeekAtLastError());
+}
 ```
 
-**最终结果** 7657 GFLOPS，约为cuBlas的60.34%，相比naive实现提升了31.25倍。
+&emsp;&emsp;代码定义了 BM=128, BN=128, BK=8，也就是一个 Block 从 32x32 大小变成了 128x128 的大小，并且在K轴方向上只处理大小为 8 的切片， 每个线程都处理 8x8 大小的tile，因此最后需要 NUM_THREADS = 256 个线程。每个 Warp 有 32 个线程，那么256 个线程就有 8 个warp，每个 warp 负责的所有 tile 就是warp tile，由于每个线程处理 8x8 大小的 tile，那每个 Warp 就负责处理 32x64 或 64x32 大小的 warp tile， 我们这里定义 warp tile大小为 64x32，这是可以任选的。当定义了 warp tile大小为 64x32，结合整个 Block 为128x128 大小，可以得知 Warp 是按 2 行 4 列排布的，Warp 内部的线程就是按 8 行 4 列排布的。与此同时 Tile 从 4x4 增大到 8x8，每次计算需要64次乘加运算，而需要16次访存，计算访存比达到了4:1.
+
+&emsp;&emsp;需要注意，在访存和计算时，线程的映射是不同的。在访存A阶段，aLoadRow = tid / 2 把 256 个线程映射到 128 行上，也就是每行需要两个线程访存，每个线程访问4个float数据，刚好只需要使用一个float4向量即可，aLoadCol = (tid % 2) * 4 让这两个线程的偶数从地址0开始访存，而奇数从地址4开始访存。在访存B阶段是相同的，bLoadRow = tid / 32 把 256 个线程映射到了8行，每行就需要 32 个线程，每个线程需要访问4个float数据，放好也只需要使用一个float4向量即可。
+
+&emsp;&emsp;在计算阶段，Warp 内的线程要同时执行 regA[i] = sA[read_stage][k][warpRow * WM + laneRow * TM + i]，对同一个K时间步来说，同一个 Warp 的 32 个线程会读取 sA 的同一列，因为 sA 是 mxk 排列的，这样容易发生 bank conflict，而转置为 kxm后，32个线程会读取 sA 的同一行里的连续数据，这样可以命中 32 个不同的 Bank。因此在写入sA的时候，aLoadRow 和 aLoadCol 的前后顺序对掉了，从 sA[write_stage][aLoadRow][aLoadCol + 0] 变为了 sA[write_stage][aLoadCol + 0][aLoadRow]。
+
+<img width="683" height="616" alt="Image" src="https://github.com/user-attachments/assets/bf548bd9-0ff5-425c-9d42-d46fdaceb2eb" />
+
+&emsp;&emsp;warpId = tid / 32;用来计算线程是数据第几个 Warp，laneId = tid % 32; 用来定位这个线程在 Warp 中的 index。而全部 8 个 Warp被我们定义是 2 行 8 列，因此用 warpRow = warpId / 4 来定位 warp 的行id，用 warpCol = warpId % 4 来定位 warp 的列id。对于每个 Warp 内部，由于 32 个线程也被我们定义为 8 行 4 列，因此用 laneRow = laneId / 4 来定位线程的行id，用 laneCol = laneId % 4 来定位线程的列id。最后就可以算出这个线程在矩阵C中的坐标。
+
+&emsp;&emsp;我们一直以来进行的操作都是访存->计算->访存，在这种模式中有一个巨大的性能气泡，由于所有线程需要使用了__syncthreads(); 进行等待，因此当所有线程在访存的时候，计算单元完全空闲，因为都在等待访存结束，而当所有线程在计算时，访存单元又完全空闲了，因为都在等待计算结束，而double buffer 的引入就是为了填平这个气泡。我们在 shared memory 中分配了两份缓冲区 sA[2], sB[2]，把它的逻辑变成了一个乒乓操作。
+
+&emsp;&emsp;在第0次迭代之前，write_stage=0，read_stage=0，所有线程将Block的第一块数据加载到缓冲区0，然后强制所有线程同步等待第一块数据写入完成，当进入循环，开始第0次迭代时，计算单元开始从缓冲区0读取数据并进行 warp tile 计算，与此同时启动下一批Block数据的加载，此时将write_stage翻转，Block数据保存到缓冲区1，不影响当前计算单元读取缓冲区0进行计算，代码在循环内没有为写入新数据单独设置 __syncthreads()，而是当第0次迭代完成时才强制所有线程同步等待，这次同步等待同时等待两件事，缓冲区1预取完成和缓冲区0计算完成。因此到第1次迭代的时候，计算单元完成计算后不需要等待访存，直接翻转 read_stage 读取缓冲区1的数据就可以开始计算，因为缓冲区1的数据已经被强制等待预取完成了，与此同时再度翻转 write_stage 将下一批Block数据保存到缓冲区0。这样一来，访存和计算在时间上overlap了。
+
+&emsp;&emsp;在真正的计算阶段，其循环有两部分，第一个是外层大循环，这个循环沿着 K 轴的时间步，每次只读入 BK 长度的数据，每一次循环都搬运整个 Block 进 shared memory。第二个是内层小循环，这个循环遍历 Block ，在 BK 大小的子 K 轴上循环计算，这个计算是在现场内部串行执行的。在每个时间步中，每个线程读取 TileA 的一列 8x1 的向量和 TileB 一行 1x8 的向量计算得到整个 8x8 TileC 的值，进行 BK 个时间步的累加后，就能得到正确的 TileC 的矩阵，regC[i][j] 一直用 +=，从未清零。也就是说，内层循环就是将每个 TileC 累加 BK 次获得正确的 TileC 矩阵，而外层循环就是将 TileC 累加 K/BK 次获得正确 128x128 大小的 BlockC 矩阵。
+
+&emsp;&emsp;要一直记住，在读写矩阵A和矩阵B时，每个 Block 是 128x8 的，而到了计算成矩阵C时，每个 Block 是 128x128的。
+
+<img width="576" height="211" alt="Image" src="https://github.com/user-attachments/assets/d58e354a-a828-48ff-a58c-3b3fccc83157" />
+
+**最终结果** 10642 GFLOPS，约为cuBlas的88.71%，相比naive实现提升了43.44倍。
