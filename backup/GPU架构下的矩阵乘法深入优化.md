@@ -560,3 +560,179 @@ void LaunchWarpTiledDoubleBufferGemm(const float* A, const float* B, float* C, i
 <img width="576" height="211" alt="Image" src="https://github.com/user-attachments/assets/d58e354a-a828-48ff-a58c-3b3fccc83157" />
 
 **最终结果** 10642 GFLOPS，约为cuBlas的88.71%，相比naive实现提升了43.44倍。
+
+---
+### 6. fp32 + tensor core 实现
+
+```cu
+using namespace nvcuda;
+
+constexpr int BM = 128;
+constexpr int BN = 128;
+constexpr int BK = 32;
+constexpr int WM = 64;
+constexpr int WN = 32;
+constexpr int WARPS_M = BM / WM;
+constexpr int WARPS_N = BN / WN;
+constexpr int NUM_THREADS = WARPS_M * WARPS_N * 32;
+constexpr int SKEW = 16;
+constexpr int HALF_PER_16B = 8;
+
+__device__ __forceinline__ __half HalfFromBits(unsigned int bits) {
+  return __ushort_as_half(static_cast<unsigned short>(bits));
+}
+
+__device__ __forceinline__ void LoadTensorTile(const __half *__restrict__ A,
+                                               const __half *__restrict__ B,
+                                               __half (&sA)[2][BK][BM + SKEW],
+                                               __half (&sB)[2][BK][BN + SKEW], int stage, int by,
+                                               int bx, int global_k, int N, int K) {
+  const int tid = threadIdx.x;
+
+// A 矩阵块尺寸 128x32，共 4096 个元素，256 线程每人读 16 个 half (2 个 uint4)
+#pragma unroll
+  for (int iter = 0; iter < (BM * BK / HALF_PER_16B) / NUM_THREADS; ++iter) {
+    const int idx = tid + iter * NUM_THREADS;
+    const int aLoadRow = idx / (BK / HALF_PER_16B);
+    const int aLoadCol = (idx % (BK / HALF_PER_16B)) * HALF_PER_16B;
+    const int a_gRow = by * BM + aLoadRow;
+    const int a_gCol = global_k + aLoadCol;
+    const uint4 vec = *reinterpret_cast<const uint4 *>(&A[a_gRow * K + a_gCol]);
+    // 存入 Shared Memory 时进行转置：[k][m]
+    sA[stage][aLoadCol + 0][aLoadRow] = HalfFromBits(vec.x);
+    sA[stage][aLoadCol + 1][aLoadRow] = HalfFromBits(vec.x >> 16);
+    sA[stage][aLoadCol + 2][aLoadRow] = HalfFromBits(vec.y);
+    sA[stage][aLoadCol + 3][aLoadRow] = HalfFromBits(vec.y >> 16);
+    sA[stage][aLoadCol + 4][aLoadRow] = HalfFromBits(vec.z);
+    sA[stage][aLoadCol + 5][aLoadRow] = HalfFromBits(vec.z >> 16);
+    sA[stage][aLoadCol + 6][aLoadRow] = HalfFromBits(vec.w);
+    sA[stage][aLoadCol + 7][aLoadRow] = HalfFromBits(vec.w >> 16);
+  }
+
+// B 矩阵块尺寸 32x128，共 4096 个元素，256 线程每人读 16 个 half (2 个 uint4)
+#pragma unroll
+  for (int iter = 0; iter < (BK * BN / HALF_PER_16B) / NUM_THREADS; ++iter) {
+    const int idx = tid + iter * NUM_THREADS;
+    const int bLoadRow = idx / (BN / HALF_PER_16B);
+    const int bLoadCol = (idx % (BN / HALF_PER_16B)) * HALF_PER_16B;
+    const int b_gRow = global_k + bLoadRow;
+    const int b_gCol = bx * BN + bLoadCol;
+    *reinterpret_cast<uint4 *>(&sB[stage][bLoadRow][bLoadCol]) =
+        *reinterpret_cast<const uint4 *>(&B[b_gRow * N + b_gCol]);
+  }
+}
+
+__device__ __forceinline__ void
+MmaTile(__half (&sA)[2][BK][BM + SKEW], __half (&sB)[2][BK][BN + SKEW], int stage, int warpRow,
+        int warpCol, wmma::fragment<wmma::accumulator, 16, 16, 16, float> (&c_frag)[4][2]) {
+#pragma unroll
+  for (int k_round = 0; k_round < BK / 16; ++k_round) {
+    const int k_off = k_round * 16;
+
+    wmma::fragment<wmma::matrix_a, 16, 16, 16, __half, wmma::col_major> a_frag[4];
+    wmma::fragment<wmma::matrix_b, 16, 16, 16, __half, wmma::row_major> b_frag[2];
+
+#pragma unroll
+    for (int m = 0; m < 4; ++m) {
+      wmma::load_matrix_sync(a_frag[m], &sA[stage][k_off][warpRow * WM + m * 16], BM + SKEW);
+    }
+#pragma unroll
+    for (int n = 0; n < 2; ++n) {
+      wmma::load_matrix_sync(b_frag[n], &sB[stage][k_off][warpCol * WN + n * 16], BN + SKEW);
+    }
+
+#pragma unroll
+    for (int m = 0; m < 4; ++m) {
+#pragma unroll
+      for (int n = 0; n < 2; ++n) {
+        wmma::mma_sync(c_frag[m][n], a_frag[m], b_frag[n], c_frag[m][n]);
+      }
+    }
+  }
+}
+
+__global__ void __launch_bounds__(NUM_THREADS, 2)
+    TensorGemmKernel(const __half *__restrict__ A, const __half *__restrict__ B,
+                     float *__restrict__ C, int M, int N, int K) {
+  (void)M;
+  __shared__ __half sA[2][BK][BM + SKEW];
+  __shared__ __half sB[2][BK][BN + SKEW];
+
+  const int tid = threadIdx.x;
+  const int bx = blockIdx.x; // Block Col -> N
+  const int by = blockIdx.y; // Block Row -> M
+
+  const int warpId = tid / 32;
+  const int warpRow = warpId / WARPS_N; // 8 个 Warp 在 Block 内的排列: 2(M) x 4(N)
+  const int warpCol = warpId % WARPS_N;
+  const int rowC = by * BM + warpRow * WM;
+  const int colC = bx * BN + warpCol * WN;
+
+  wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag[4][2];
+#pragma unroll
+  for (int m = 0; m < 4; ++m) {
+#pragma unroll
+    for (int n = 0; n < 2; ++n) {
+      wmma::fill_fragment(c_frag[m][n], 0.0f);
+    }
+  }
+
+  int write_stage = 0;
+  int read_stage = 0;
+  int global_k = 0;
+
+  LoadTensorTile(A, B, sA, sB, write_stage, by, bx, global_k, N, K);
+  __syncthreads();
+
+  for (global_k = 0; global_k < K; global_k += BK) {
+    // 切换写入 stage 缓冲区
+    write_stage ^= 1;
+
+    // 如果不是最后一个块，预取下一个 Tile 的数据
+    const int next_k = global_k + BK;
+    if (next_k < K) {
+      LoadTensorTile(A, B, sA, sB, write_stage, by, bx, next_k, N, K);
+    }
+
+    // WMMA 计算当前 read_stage 缓冲内的数据
+    MmaTile(sA, sB, read_stage, warpRow, warpCol, c_frag);
+
+    __syncthreads();
+
+    // 翻转读取缓冲区，供下一个迭代使用
+    read_stage ^= 1;
+  }
+
+#pragma unroll
+  for (int m = 0; m < 4; ++m) {
+#pragma unroll
+    for (int n = 0; n < 2; ++n) {
+      wmma::store_matrix_sync(&C[(rowC + m * 16) * N + colC + n * 16], c_frag[m][n], N,
+                              wmma::mem_row_major);
+    }
+  }
+}
+
+void LaunchTensorGemm(const void *A, const void *B, void *C, int M, int N, int K,
+                      cudaStream_t stream) {
+  const auto *a = static_cast<const __half *>(A);
+  const auto *b = static_cast<const __half *>(B);
+  auto *c = static_cast<float *>(C);
+
+  static const bool cache_configured = [] {
+    CUDA_CHECK(cudaFuncSetCacheConfig(TensorGemmKernel, cudaFuncCachePreferShared));
+    return true;
+  }();
+  (void)cache_configured;
+
+  const dim3 block(NUM_THREADS);
+  const dim3 grid(N / BN, M / BM);
+  TensorGemmKernel<<<grid, block, 0, stream>>>(a, b, c, M, N, K);
+  CUDA_CHECK(cudaPeekAtLastError());
+}
+
+```
+
+<img width="579" height="227" alt="Image" src="https://github.com/user-attachments/assets/a719d2f2-90d7-4b4b-882b-530dc423a063" />
+
+**最终结果** 46736 GFLOPS，约为cuBlas的60.71%，相比float实现提升了4.39倍。

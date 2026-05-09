@@ -639,7 +639,177 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p>  在真正的计算阶段，其循环有两部分，第一个是外层大循环，这个循环沿着 K 轴的时间步，每次只读入 BK 长度的数据，每一次循环都搬运整个 Block 进 shared memory。第二个是内层小循环，这个循环遍历 Block ，在 BK 大小的子 K 轴上循环计算，这个计算是在现场内部串行执行的。在每个时间步中，每个线程读取 TileA 的一列 8x1 的向量和 TileB 一行 1x8 的向量计算得到整个 8x8 TileC 的值，进行 BK 个时间步的累加后，就能得到正确的 TileC 的矩阵，regC[i][j] 一直用 +=，从未清零。也就是说，内层循环就是将每个 TileC 累加 BK 次获得正确的 TileC 矩阵，而外层循环就是将 TileC 累加 K/BK 次获得正确 128x128 大小的 BlockC 矩阵。</p>
 <p>  要一直记住，在读写矩阵A和矩阵B时，每个 Block 是 128x8 的，而到了计算成矩阵C时，每个 Block 是 128x128的。</p>
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/d58e354a-a828-48ff-a58c-3b3fccc83157"><img width="576" height="211" alt="Image" src="https://github.com/user-attachments/assets/d58e354a-a828-48ff-a58c-3b3fccc83157" style="max-width: 100%; height: auto; max-height: 211px;; aspect-ratio: 576 / 211; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
-<p><strong>最终结果</strong> 10642 GFLOPS，约为cuBlas的88.71%，相比naive实现提升了43.44倍。</p></div>
+<p><strong>最终结果</strong> 10642 GFLOPS，约为cuBlas的88.71%，相比naive实现提升了43.44倍。</p>
+<hr>
+<h3>6. fp32 + tensor core 实现</h3>
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">using</span> <span class="pl-k">namespace</span> <span class="pl-en">nvcuda</span><span class="pl-k">;</span>
+
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> BM = <span class="pl-c1">128</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> BN = <span class="pl-c1">128</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> BK = <span class="pl-c1">32</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> WM = <span class="pl-c1">64</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> WN = <span class="pl-c1">32</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> WARPS_M = BM / WM;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> WARPS_N = BN / WN;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> NUM_THREADS = WARPS_M * WARPS_N * <span class="pl-c1">32</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> SKEW = <span class="pl-c1">16</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> HALF_PER_16B = <span class="pl-c1">8</span>;
+
+<span class="pl-k">__device__</span> <span class="pl-k">__forceinline__</span> __half <span class="pl-en">HalfFromBits</span>(<span class="pl-k">unsigned</span> <span class="pl-k">int</span> bits) {
+  <span class="pl-k">return</span> <span class="pl-c1">__ushort_as_half</span>(<span class="pl-k">static_cast</span>&lt;<span class="pl-k">unsigned</span> <span class="pl-k">short</span>&gt;(bits));
+}
+
+<span class="pl-k">__device__</span> <span class="pl-k">__forceinline__</span> <span class="pl-k">void</span> <span class="pl-en">LoadTensorTile</span>(<span class="pl-k">const</span> __half *<span class="pl-k">__restrict__</span> A,
+                                               <span class="pl-k">const</span> __half *<span class="pl-k">__restrict__</span> B,
+                                               <span class="pl-en">__half</span> (&amp;<span class="pl-smi">sA</span>)[2][BK][BM + SKEW],
+                                               __half (&amp;<span class="pl-smi">sB</span>)[2][BK][BN + SKEW], int stage, int by,
+                                               int bx, int global_k, int N, int K) {
+  <span class="pl-k">const</span> <span class="pl-k">int</span> tid = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
+
+<span class="pl-c"><span class="pl-c">//</span> A 矩阵块尺寸 128x32，共 4096 个元素，256 线程每人读 16 个 half (2 个 uint4)</span>
+#<span class="pl-k">pragma</span> unroll
+  <span class="pl-k">for</span> (<span class="pl-k">int</span> iter = <span class="pl-c1">0</span>; iter &lt; (BM * BK / HALF_PER_16B) / NUM_THREADS; ++iter) {
+    <span class="pl-k">const</span> <span class="pl-k">int</span> idx = tid + iter * NUM_THREADS;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> aLoadRow = idx / (BK / HALF_PER_16B);
+    <span class="pl-k">const</span> <span class="pl-k">int</span> aLoadCol = (idx % (BK / HALF_PER_16B)) * HALF_PER_16B;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> a_gRow = by * BM + aLoadRow;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> a_gCol = global_k + aLoadCol;
+    <span class="pl-k">const</span> <span class="pl-c1">uint4</span> vec = *<span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">uint4</span> *&gt;(&amp;A[a_gRow * K + a_gCol]);
+    <span class="pl-c"><span class="pl-c">//</span> 存入 Shared Memory 时进行转置：[k][m]</span>
+    <span class="pl-smi">sA</span>[stage][aLoadCol + <span class="pl-c1">0</span>][aLoadRow] = <span class="pl-c1">HalfFromBits</span>(vec.<span class="pl-smi">x</span>);
+    <span class="pl-smi">sA</span>[stage][aLoadCol + <span class="pl-c1">1</span>][aLoadRow] = <span class="pl-c1">HalfFromBits</span>(vec.<span class="pl-smi">x</span> &gt;&gt; <span class="pl-c1">16</span>);
+    <span class="pl-smi">sA</span>[stage][aLoadCol + <span class="pl-c1">2</span>][aLoadRow] = <span class="pl-c1">HalfFromBits</span>(vec.<span class="pl-smi">y</span>);
+    <span class="pl-smi">sA</span>[stage][aLoadCol + <span class="pl-c1">3</span>][aLoadRow] = <span class="pl-c1">HalfFromBits</span>(vec.<span class="pl-smi">y</span> &gt;&gt; <span class="pl-c1">16</span>);
+    <span class="pl-smi">sA</span>[stage][aLoadCol + <span class="pl-c1">4</span>][aLoadRow] = <span class="pl-c1">HalfFromBits</span>(vec.<span class="pl-smi">z</span>);
+    <span class="pl-smi">sA</span>[stage][aLoadCol + <span class="pl-c1">5</span>][aLoadRow] = <span class="pl-c1">HalfFromBits</span>(vec.<span class="pl-smi">z</span> &gt;&gt; <span class="pl-c1">16</span>);
+    <span class="pl-smi">sA</span>[stage][aLoadCol + <span class="pl-c1">6</span>][aLoadRow] = <span class="pl-c1">HalfFromBits</span>(vec.<span class="pl-smi">w</span>);
+    <span class="pl-smi">sA</span>[stage][aLoadCol + <span class="pl-c1">7</span>][aLoadRow] = <span class="pl-c1">HalfFromBits</span>(vec.<span class="pl-smi">w</span> &gt;&gt; <span class="pl-c1">16</span>);
+  }
+
+<span class="pl-c"><span class="pl-c">//</span> B 矩阵块尺寸 32x128，共 4096 个元素，256 线程每人读 16 个 half (2 个 uint4)</span>
+#<span class="pl-k">pragma</span> unroll
+  <span class="pl-k">for</span> (<span class="pl-k">int</span> iter = <span class="pl-c1">0</span>; iter &lt; (BK * BN / HALF_PER_16B) / NUM_THREADS; ++iter) {
+    <span class="pl-k">const</span> <span class="pl-k">int</span> idx = tid + iter * NUM_THREADS;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> bLoadRow = idx / (BN / HALF_PER_16B);
+    <span class="pl-k">const</span> <span class="pl-k">int</span> bLoadCol = (idx % (BN / HALF_PER_16B)) * HALF_PER_16B;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> b_gRow = global_k + bLoadRow;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> b_gCol = bx * BN + bLoadCol;
+    *<span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-c1">uint4</span> *&gt;(&amp;<span class="pl-smi">sB</span>[stage][bLoadRow][bLoadCol]) =
+        *<span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">uint4</span> *&gt;(&amp;B[b_gRow * N + b_gCol]);
+  }
+}
+
+<span class="pl-k">__device__</span> <span class="pl-k">__forceinline__</span> <span class="pl-k">void</span>
+<span class="pl-en">MmaTile</span>(__half (&amp;<span class="pl-smi">sA</span>)[2][BK][BM + SKEW], __half (&amp;<span class="pl-smi">sB</span>)[2][BK][BN + SKEW], int stage, int warpRow,
+        int warpCol, wmma::fragment&lt;wmma::accumulator, 16, 16, 16, float&gt; (&amp;c_frag)[4][2]) {
+#<span class="pl-k">pragma</span> unroll
+  <span class="pl-k">for</span> (<span class="pl-k">int</span> k_round = <span class="pl-c1">0</span>; k_round &lt; BK / <span class="pl-c1">16</span>; ++k_round) {
+    <span class="pl-k">const</span> <span class="pl-k">int</span> k_off = k_round * <span class="pl-c1">16</span>;
+
+    wmma::fragment&lt;wmma::matrix_a, <span class="pl-c1">16</span>, <span class="pl-c1">16</span>, <span class="pl-c1">16</span>, __half, wmma::col_major&gt; a_frag[<span class="pl-c1">4</span>];
+    wmma::fragment&lt;wmma::matrix_b, <span class="pl-c1">16</span>, <span class="pl-c1">16</span>, <span class="pl-c1">16</span>, __half, wmma::row_major&gt; b_frag[<span class="pl-c1">2</span>];
+
+#<span class="pl-k">pragma</span> unroll
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> m = <span class="pl-c1">0</span>; m &lt; <span class="pl-c1">4</span>; ++m) {
+      <span class="pl-c1">wmma::load_matrix_sync</span>(a_frag[m], &amp;<span class="pl-smi">sA</span>[stage][k_off][warpRow * WM + m * <span class="pl-c1">16</span>], BM + SKEW);
+    }
+#<span class="pl-k">pragma</span> unroll
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> n = <span class="pl-c1">0</span>; n &lt; <span class="pl-c1">2</span>; ++n) {
+      <span class="pl-c1">wmma::load_matrix_sync</span>(b_frag[n], &amp;<span class="pl-smi">sB</span>[stage][k_off][warpCol * WN + n * <span class="pl-c1">16</span>], BN + SKEW);
+    }
+
+#<span class="pl-k">pragma</span> unroll
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> m = <span class="pl-c1">0</span>; m &lt; <span class="pl-c1">4</span>; ++m) {
+#<span class="pl-k">pragma</span> unroll
+      <span class="pl-k">for</span> (<span class="pl-k">int</span> n = <span class="pl-c1">0</span>; n &lt; <span class="pl-c1">2</span>; ++n) {
+        <span class="pl-c1">wmma::mma_sync</span>(c_frag[m][n], a_frag[m], b_frag[n], c_frag[m][n]);
+      }
+    }
+  }
+}
+
+<span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">__launch_bounds__</span>(NUM_THREADS, <span class="pl-c1">2</span>)
+    TensorGemmKernel(<span class="pl-k">const</span> __half *<span class="pl-k">__restrict__</span> A, <span class="pl-k">const</span> __half *<span class="pl-k">__restrict__</span> B,
+                     <span class="pl-k">float</span> *<span class="pl-k">__restrict__</span> C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
+  (<span class="pl-k">void</span>)M;
+  <span class="pl-k">__shared__</span> __half <span class="pl-smi">sA</span>[<span class="pl-c1">2</span>][BK][BM + SKEW];
+  <span class="pl-k">__shared__</span> __half <span class="pl-smi">sB</span>[<span class="pl-c1">2</span>][BK][BN + SKEW];
+
+  <span class="pl-k">const</span> <span class="pl-k">int</span> tid = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
+  <span class="pl-k">const</span> <span class="pl-k">int</span> bx = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span>; <span class="pl-c"><span class="pl-c">//</span> Block Col -&gt; N</span>
+  <span class="pl-k">const</span> <span class="pl-k">int</span> by = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span>; <span class="pl-c"><span class="pl-c">//</span> Block Row -&gt; M</span>
+
+  <span class="pl-k">const</span> <span class="pl-k">int</span> warpId = tid / <span class="pl-c1">32</span>;
+  <span class="pl-k">const</span> <span class="pl-k">int</span> warpRow = warpId / WARPS_N; <span class="pl-c"><span class="pl-c">//</span> 8 个 Warp 在 Block 内的排列: 2(M) x 4(N)</span>
+  <span class="pl-k">const</span> <span class="pl-k">int</span> warpCol = warpId % WARPS_N;
+  <span class="pl-k">const</span> <span class="pl-k">int</span> rowC = by * BM + warpRow * WM;
+  <span class="pl-k">const</span> <span class="pl-k">int</span> colC = bx * BN + warpCol * WN;
+
+  wmma::fragment&lt;wmma::accumulator, <span class="pl-c1">16</span>, <span class="pl-c1">16</span>, <span class="pl-c1">16</span>, <span class="pl-k">float</span>&gt; c_frag[<span class="pl-c1">4</span>][<span class="pl-c1">2</span>];
+#<span class="pl-k">pragma</span> unroll
+  <span class="pl-k">for</span> (<span class="pl-k">int</span> m = <span class="pl-c1">0</span>; m &lt; <span class="pl-c1">4</span>; ++m) {
+#<span class="pl-k">pragma</span> unroll
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> n = <span class="pl-c1">0</span>; n &lt; <span class="pl-c1">2</span>; ++n) {
+      <span class="pl-c1">wmma::fill_fragment</span>(c_frag[m][n], <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>);
+    }
+  }
+
+  <span class="pl-k">int</span> write_stage = <span class="pl-c1">0</span>;
+  <span class="pl-k">int</span> read_stage = <span class="pl-c1">0</span>;
+  <span class="pl-k">int</span> global_k = <span class="pl-c1">0</span>;
+
+  <span class="pl-c1">LoadTensorTile</span>(A, B, <span class="pl-smi">sA</span>, <span class="pl-smi">sB</span>, write_stage, by, bx, global_k, N, K);
+  <span class="pl-c1">__syncthreads</span>();
+
+  <span class="pl-k">for</span> (global_k = <span class="pl-c1">0</span>; global_k &lt; K; global_k += BK) {
+    <span class="pl-c"><span class="pl-c">//</span> 切换写入 stage 缓冲区</span>
+    write_stage ^= <span class="pl-c1">1</span>;
+
+    <span class="pl-c"><span class="pl-c">//</span> 如果不是最后一个块，预取下一个 Tile 的数据</span>
+    <span class="pl-k">const</span> <span class="pl-k">int</span> next_k = global_k + BK;
+    <span class="pl-k">if</span> (next_k &lt; K) {
+      <span class="pl-c1">LoadTensorTile</span>(A, B, <span class="pl-smi">sA</span>, <span class="pl-smi">sB</span>, write_stage, by, bx, next_k, N, K);
+    }
+
+    <span class="pl-c"><span class="pl-c">//</span> WMMA 计算当前 read_stage 缓冲内的数据</span>
+    <span class="pl-c1">MmaTile</span>(<span class="pl-smi">sA</span>, <span class="pl-smi">sB</span>, read_stage, warpRow, warpCol, c_frag);
+
+    <span class="pl-c1">__syncthreads</span>();
+
+    <span class="pl-c"><span class="pl-c">//</span> 翻转读取缓冲区，供下一个迭代使用</span>
+    read_stage ^= <span class="pl-c1">1</span>;
+  }
+
+#<span class="pl-k">pragma</span> unroll
+  <span class="pl-k">for</span> (<span class="pl-k">int</span> m = <span class="pl-c1">0</span>; m &lt; <span class="pl-c1">4</span>; ++m) {
+#<span class="pl-k">pragma</span> unroll
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> n = <span class="pl-c1">0</span>; n &lt; <span class="pl-c1">2</span>; ++n) {
+      <span class="pl-c1">wmma::store_matrix_sync</span>(&amp;C[(rowC + m * <span class="pl-c1">16</span>) * N + colC + n * <span class="pl-c1">16</span>], c_frag[m][n], N,
+                              wmma::mem_row_major);
+    }
+  }
+}
+
+<span class="pl-k">void</span> <span class="pl-en">LaunchTensorGemm</span>(<span class="pl-k">const</span> <span class="pl-k">void</span> *A, <span class="pl-k">const</span> <span class="pl-k">void</span> *B, <span class="pl-k">void</span> *C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K,
+                      cudaStream_t stream) {
+  <span class="pl-k">const</span> <span class="pl-k">auto</span> *a = <span class="pl-k">static_cast</span>&lt;<span class="pl-k">const</span> __half *&gt;(A);
+  <span class="pl-k">const</span> <span class="pl-k">auto</span> *b = <span class="pl-k">static_cast</span>&lt;<span class="pl-k">const</span> __half *&gt;(B);
+  <span class="pl-k">auto</span> *c = <span class="pl-k">static_cast</span>&lt;<span class="pl-k">float</span> *&gt;(C);
+
+  <span class="pl-k">static</span> <span class="pl-k">const</span> <span class="pl-k">bool</span> cache_configured = [] {
+    <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaFuncSetCacheConfig</span>(TensorGemmKernel, cudaFuncCachePreferShared));
+    <span class="pl-k">return</span> <span class="pl-c1">true</span>;
+  }();
+  (<span class="pl-k">void</span>)cache_configured;
+
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(NUM_THREADS);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>(N / BN, M / BM);
+  TensorGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(a, b, c, M, N, K);
+  <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
+}
+</pre></div>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/a719d2f2-90d7-4b4b-882b-530dc423a063"><img width="579" height="227" alt="Image" src="https://github.com/user-attachments/assets/a719d2f2-90d7-4b4b-882b-530dc423a063" style="max-width: 100%; height: auto; max-height: 227px;; aspect-ratio: 579 / 227; background-color: var(--bgColor-muted); border-radius: 6px; display: block" class="js-gh-image-fallback"></a></p>
+<p><strong>最终结果</strong> 46736 GFLOPS，约为cuBlas的60.71%，相比float实现提升了4.39倍。</p></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
