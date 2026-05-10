@@ -733,6 +733,14 @@ void LaunchTensorGemm(const void *A, const void *B, void *C, int M, int N, int K
 
 ```
 
-<img width="579" height="227" alt="Image" src="https://github.com/user-attachments/assets/a719d2f2-90d7-4b4b-882b-530dc423a063" />
+在这一步中，我们正式引入 Tensor Core，将矩阵乘法的计算从 FP32 切换到 Tensor Core 加速的 FP16 输入、FP32 累加模式。硬件上，V100 的 Tensor Core 每个时钟可以完成一个 16x16x16 的矩阵乘加运算，吞吐远超普通 FP32 单元，同时由于 Tensor Core 只能计算固定大小的矩阵，因此需要重新组织 Block、Warp 和共享内存的布局，使其对齐到 Tensor Core 的 16x16 分块，并采用 WMMA API 来进行加载与计算。
+
+代码仍然沿用 double buffer 的乒乓结构，但分块尺寸发生了变化：Block 大小保持 128x128，而 K 方向的切片深度从 BK=8 增大到 BK=32。这是因为 WMMA 每次会处理一个 16x16x16 的子块，在 K 轴上需要至少 16 个元素，而BK=32 可以让内层循环执行两次 16x16 的 WMMA 迭代，提高 WMMA 的计算访存比。同时，还是定义 warp tile大小为 64x32，但是Warp 内不再需要手动展开外积，而是把该区域划分成 4x2 个 16x16 的 wmma::fragment，由 mma_sync 指令一次性完成乘加。
+
+从并行视角看，加载阶段依然由 256 个线程协作完成。A 矩阵的一个 Block 大小为 128x32，共 4096 个 half 元素；256 个线程还是分配为每行两个线程，每个线程读取一行 32个 half 的一半 (即 16 个 half，2 个 uint4），使用向量化访存一次性搬入共享内存。同样地，A 矩阵存入共享内存时做了转置，变为 [k][m] 的列主序布局；B 矩阵则保持正常的 [k][n] 行主序。共享内存数组额外加了 SKEW=16 的填充，用来错开不同列地址所映射的 Bank，从而消除 half 类型下的 Bank Conflict。
+
+计算阶段的核心是 MmaTile 函数，它在每个 K 切片内循环 k_round。对于每一个 k_round，当前 Warp 从共享内存中加载 4 个 A 的 16x16 子矩阵（列主序）和 2 个 B 的 16x16 子矩阵（行主序），然后调用 8 次 mma_sync 分别累加到对应位置的 c_frag 中。整个过程完全由硬件线程束调度，无需手动展开内积循环。MmaTile 负责对当前 BK 切片进行 Tensor Core 计算并累加到片段；外层的 global_k 循环结束后，每个 warp 负责的 Tile C 才真正计算完成，与此同时，整个矩阵 C 也计算完成了，通过 wmma::store_matrix_sync 直接按行主序写回到。
+
+<img width="588" height="229" alt="Image" src="https://github.com/user-attachments/assets/22ddbab5-1d54-487a-ae70-9fea6add920b" />
 
 **最终结果** 46736 GFLOPS，约为cuBlas的60.71%，相比float实现提升了4.39倍。
