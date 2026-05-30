@@ -40,7 +40,7 @@ void LaunchNaiveGemm(const float* A, const float* B, float* C, int M, int N, int
 
 &emsp;&emsp;对每个(x,y)坐标对来说，都需要在内部循环计算k，比如需要计算从(x, 0)到(x, k)和(0, y)到(k, y)的乘加，当计算完内部的k循环后，x加1，变成计算从(x+1, 0)到(x+1, k)和(0, y)到(k, y)的乘加，这个过程中x从0到m的计算，y都是不变的，索引变化如图。
 
-<img width="715" height="601" alt="Image" src="https://github.com/user-attachments/assets/4a3ec221-1b59-420e-a543-d07682be98c7" />
+<img width="723" height="639" alt="Image" src="https://github.com/user-attachments/assets/ed11f0ad-e0a7-459d-9128-728b63531d7a" />
 
 &emsp;&emsp;一定要记住 **GPU是并行** 的，可以这么理解，GPU的 $m \times n$ 个线程在同一时刻完成了K循环的同一步，K循环是一个时间的步数，每一步里都有 $m \times k$个线程在访存和运算。
 
@@ -82,7 +82,7 @@ void LaunchYfirstGemm(const float* A, const float* B, float* C, int M, int N, in
 
 &emsp;&emsp;使用列n为BlockX，行m为BlockY，这时列变成了threadIdx中优先变化的量，也就是先计算从(y, 0)到(y, k)和(0, x)到(k, x)的乘加，当计算完内部的k循环后，x加1，变成计算从(y, 0)到(y, k)和(0, x+1)到(k, x+1)的乘加，索引变化如图。
 
-<img width="851" height="710" alt="Image" src="https://github.com/user-attachments/assets/00dcfb25-d387-4528-bd67-b4af06d85fb8" />
+<img width="735" height="618" alt="Image" src="https://github.com/user-attachments/assets/21fb8f20-68b3-498b-b6cd-cb9d89304992" />
 
 &emsp;&emsp;在这种情况下，GPU在同一时刻完成K循环的同一步，这个时刻对A矩阵来说就是获取了(y,k)这一个数据，一共需要访问m行，就是 $m$ 次访存，这个时刻对B矩阵来说就是获取了从(k,0)到(k,n)的一行数据，yfirst的 **优化点** 就在这，由于同一个GPU时间刻的连续thread在访问连续数据，因此会按warp合并访问，一次访存就可以访问32B数据即8个FP32数据，一行数据需要访存 $n \div 8$ 次，一共k行，就是 $\frac{n \times k}{8}$ 次访存。A矩阵和B矩阵加起来进行了 $m + \frac{n \times k}{8}$ 次访存。（实际上，同一行内不同列的线程会重复读取同一个 A[row][k]，没有利用广播，且访问不连续导致无法合并，真实的全局内存访问量远大于这个简化模型）
 
