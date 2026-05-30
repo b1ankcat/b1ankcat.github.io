@@ -641,7 +641,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/d58e354a-a828-48ff-a58c-3b3fccc83157"><img width="576" height="211" alt="Image" src="https://github.com/user-attachments/assets/d58e354a-a828-48ff-a58c-3b3fccc83157" style="max-width: 100%; height: auto; max-height: 211px;; aspect-ratio: 576 / 211; background-color: var(--bgColor-muted); border-radius: 6px" class="js-gh-image-fallback"></a></p>
 <p><strong>最终结果</strong> 10642 GFLOPS，约为cuBlas的88.71%，相比naive实现提升了43.44倍。</p>
 <hr>
-<h3>6. fp32 + tensor core 实现</h3>
+<h3>6. fp16 + tensor core 实现</h3>
 <div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">using</span> <span class="pl-k">namespace</span> <span class="pl-en">nvcuda</span><span class="pl-k">;</span>
 
 <span class="pl-k">constexpr</span> <span class="pl-k">int</span> BM = <span class="pl-c1">128</span>;

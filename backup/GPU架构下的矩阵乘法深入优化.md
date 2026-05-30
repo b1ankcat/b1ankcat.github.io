@@ -562,7 +562,7 @@ void LaunchWarpTiledDoubleBufferGemm(const float* A, const float* B, float* C, i
 **最终结果** 10642 GFLOPS，约为cuBlas的88.71%，相比naive实现提升了43.44倍。
 
 ---
-### 6. fp32 + tensor core 实现
+### 6. fp16 + tensor core 实现
 
 ```cu
 using namespace nvcuda;
