@@ -170,7 +170,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 </ol>
 <hr>
 <h3>0. 朴素矩阵乘kernel实现</h3>
-<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BLOCK_SIZE = <span class="pl-c1">32</span>;
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BLOCK_SIZE</span> = <span class="pl-c1">32</span>;
 
 <span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">NaiveGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
     <span class="pl-c1">uint32_t</span> row = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">x</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
@@ -187,8 +187,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 }
 
 <span class="pl-k">void</span> <span class="pl-en">LaunchNaiveGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
-  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(BLOCK_SIZE, BLOCK_SIZE);
-  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((M + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE, (N + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(<span class="pl-c1">BLOCK_SIZE</span>, <span class="pl-c1">BLOCK_SIZE</span>);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((M + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>, (N + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>);
   NaiveGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
   <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
 }
@@ -202,7 +202,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/7561f6f6-6e18-49cf-9f2a-3f5a3316e908"><img width="589" height="212" alt="Image" src="https://github.com/user-attachments/assets/7561f6f6-6e18-49cf-9f2a-3f5a3316e908" style="max-width: 100%; height: auto; max-height: 212px;; aspect-ratio: 589 / 212; background-color: var(--bgColor-muted); border-radius: 6px" class="js-gh-image-fallback"></a></p>
 <hr>
 <h3>1. y优先kernel实现</h3>
-<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BLOCK_SIZE = <span class="pl-c1">32</span>;
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BLOCK_SIZE</span> = <span class="pl-c1">32</span>;
 
 <span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">YfirstGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
     <span class="pl-c1">uint32_t</span> col = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">x</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
@@ -219,8 +219,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 }
 
 <span class="pl-k">void</span> <span class="pl-en">LaunchYfirstGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
-  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(BLOCK_SIZE, BLOCK_SIZE);
-  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE, (M + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(<span class="pl-c1">BLOCK_SIZE</span>, <span class="pl-c1">BLOCK_SIZE</span>);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>, (M + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>);
   YfirstGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
   <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
 }
@@ -234,11 +234,11 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/bee89804-f51c-4e19-8395-f7881ce6ecae"><img width="583" height="211" alt="Image" src="https://github.com/user-attachments/assets/bee89804-f51c-4e19-8395-f7881ce6ecae" style="max-width: 100%; height: auto; max-height: 211px;; aspect-ratio: 583 / 211; background-color: var(--bgColor-muted); border-radius: 6px" class="js-gh-image-fallback"></a></p>
 <hr>
 <h3>2. shared memory kernel实现</h3>
-<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BLOCK_SIZE = <span class="pl-c1">32</span>;
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BLOCK_SIZE</span> = <span class="pl-c1">32</span>;
 
 <span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">SharedGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
-    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockA[BLOCK_SIZE * BLOCK_SIZE];
-    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockB[BLOCK_SIZE * BLOCK_SIZE];
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockA[<span class="pl-c1">BLOCK_SIZE</span> * <span class="pl-c1">BLOCK_SIZE</span>];
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockB[<span class="pl-c1">BLOCK_SIZE</span> * <span class="pl-c1">BLOCK_SIZE</span>];
 
     <span class="pl-c1">uint32_t</span> blockARow = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">y</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span>;
     <span class="pl-c1">uint32_t</span> blockBCol = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">blockDim</span>.<span class="pl-smi">x</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
@@ -246,11 +246,11 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     <span class="pl-k">if</span> (blockARow &lt; M &amp;&amp; blockBCol &lt; N) {
         <span class="pl-k">float</span> tmp = <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
 
-        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; (K + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE; i++) {
-            <span class="pl-k">int</span> blockACol = i * BLOCK_SIZE + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
-            <span class="pl-k">int</span> blockBRow = i * BLOCK_SIZE + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span>;
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; (K + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>; i++) {
+            <span class="pl-k">int</span> blockACol = i * <span class="pl-c1">BLOCK_SIZE</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
+            <span class="pl-k">int</span> blockBRow = i * <span class="pl-c1">BLOCK_SIZE</span> + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span>;
 
-            <span class="pl-k">int</span> innerRow = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * BLOCK_SIZE;
+            <span class="pl-k">int</span> innerRow = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">BLOCK_SIZE</span>;
             <span class="pl-k">int</span> innerCol = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
 
             blockA[innerRow + innerCol] = (blockACol &lt; K) ? A[blockARow * K + blockACol] : <span class="pl-c1">0</span>.<span class="pl-c1">0f</span>;
@@ -258,8 +258,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 
             <span class="pl-c1">__syncthreads</span>();
 
-            <span class="pl-k">for</span> (<span class="pl-c1">int32_t</span> j = <span class="pl-c1">0</span>; j &lt; BLOCK_SIZE; j++) {
-                tmp += blockA[innerRow + j] * blockB[j * BLOCK_SIZE + innerCol];
+            <span class="pl-k">for</span> (<span class="pl-c1">int32_t</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">BLOCK_SIZE</span>; j++) {
+                tmp += blockA[innerRow + j] * blockB[j * <span class="pl-c1">BLOCK_SIZE</span> + innerCol];
             }
             <span class="pl-c1">__syncthreads</span>();
         }
@@ -269,8 +269,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 }
 
 <span class="pl-k">void</span> <span class="pl-en">LaunchSharedGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
-    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(BLOCK_SIZE, BLOCK_SIZE);
-    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE, (M + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(<span class="pl-c1">BLOCK_SIZE</span>, <span class="pl-c1">BLOCK_SIZE</span>);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>, (M + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>);
     SharedGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
     <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
 }</pre></div>
@@ -291,26 +291,26 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/f1e9ff3e-9608-4ac0-9454-52b2b03960f0"><img width="587" height="216" alt="Image" src="https://github.com/user-attachments/assets/f1e9ff3e-9608-4ac0-9454-52b2b03960f0" style="max-width: 100%; height: auto; max-height: 216px;; aspect-ratio: 587 / 216; background-color: var(--bgColor-muted); border-radius: 6px" class="js-gh-image-fallback"></a></p>
 <hr>
 <h3>3. tiling block kernel实现</h3>
-<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BLOCK_SIZE = <span class="pl-c1">32</span>;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> TILE_SIZE = <span class="pl-c1">4</span>;
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BLOCK_SIZE</span> = <span class="pl-c1">32</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">TILE_SIZE</span> = <span class="pl-c1">4</span>;
 
 <span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">TilingGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
-    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockA[BLOCK_SIZE][BLOCK_SIZE];
-    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockB[BLOCK_SIZE][BLOCK_SIZE];
-    <span class="pl-k">float</span> tileC[TILE_SIZE][TILE_SIZE] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockA[<span class="pl-c1">BLOCK_SIZE</span>][<span class="pl-c1">BLOCK_SIZE</span>];
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockB[<span class="pl-c1">BLOCK_SIZE</span>][<span class="pl-c1">BLOCK_SIZE</span>];
+    <span class="pl-k">float</span> tileC[<span class="pl-c1">TILE_SIZE</span>][<span class="pl-c1">TILE_SIZE</span>] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};
     
-    <span class="pl-c1">uint32_t</span> blockARowStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * BLOCK_SIZE;
-    <span class="pl-c1">uint32_t</span> blockBColStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * BLOCK_SIZE;
+    <span class="pl-c1">uint32_t</span> blockARowStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">BLOCK_SIZE</span>;
+    <span class="pl-c1">uint32_t</span> blockBColStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">BLOCK_SIZE</span>;
 
-    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; (K + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE; i++) {
-        <span class="pl-k">int</span> blockAColStart = i * BLOCK_SIZE;
-        <span class="pl-k">int</span> blockBRowStart = i * BLOCK_SIZE;
+    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; (K + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>; i++) {
+        <span class="pl-k">int</span> blockAColStart = i * <span class="pl-c1">BLOCK_SIZE</span>;
+        <span class="pl-k">int</span> blockBRowStart = i * <span class="pl-c1">BLOCK_SIZE</span>;
         
         #<span class="pl-k">pragma</span> unroll
-        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
-            <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
-                <span class="pl-k">int</span> innerRow = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j;
-                <span class="pl-k">int</span> innerCol = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k;
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">TILE_SIZE</span>; j++) {
+            <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; <span class="pl-c1">TILE_SIZE</span>; k++) {
+                <span class="pl-k">int</span> innerRow = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">TILE_SIZE</span> + j;
+                <span class="pl-k">int</span> innerCol = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">TILE_SIZE</span> + k;
 
                 <span class="pl-k">if</span> ((blockARowStart + innerRow) &lt; M &amp;&amp; (blockAColStart + innerCol) &lt; K)
                     blockA[innerRow][innerCol] = A[(blockARowStart + innerRow) * K + blockAColStart + innerCol];
@@ -326,12 +326,12 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
         <span class="pl-c1">__syncthreads</span>();
 
         #<span class="pl-k">pragma</span> unroll
-        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> dotIdx = <span class="pl-c1">0</span>; dotIdx &lt; BLOCK_SIZE; dotIdx++) {
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> dotIdx = <span class="pl-c1">0</span>; dotIdx &lt; <span class="pl-c1">BLOCK_SIZE</span>; dotIdx++) {
             #<span class="pl-k">pragma</span> unroll
-            <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+            <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">TILE_SIZE</span>; j++) {
                 #<span class="pl-k">pragma</span> unroll
-                <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
-                    tileC[j][k] += blockA[<span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j][dotIdx] * blockB[dotIdx][<span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k];
+                <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; <span class="pl-c1">TILE_SIZE</span>; k++) {
+                    tileC[j][k] += blockA[<span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">TILE_SIZE</span> + j][dotIdx] * blockB[dotIdx][<span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">TILE_SIZE</span> + k];
                 }
             }
         }
@@ -339,10 +339,10 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     }
     
     #<span class="pl-k">pragma</span> unroll
-    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
-        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
-            <span class="pl-k">int</span> finalRow = blockARowStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j;
-            <span class="pl-k">int</span> finalCol = blockBColStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k;
+    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">TILE_SIZE</span>; j++) {
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; <span class="pl-c1">TILE_SIZE</span>; k++) {
+            <span class="pl-k">int</span> finalRow = blockARowStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">TILE_SIZE</span> + j;
+            <span class="pl-k">int</span> finalCol = blockBColStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">TILE_SIZE</span> + k;
             <span class="pl-k">if</span> (finalRow &lt; M &amp;&amp; finalCol &lt; N) {
                 C[finalRow * N + finalCol] = tileC[j][k];
             }
@@ -351,8 +351,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 }
 
 <span class="pl-k">void</span> <span class="pl-en">LaunchTilingGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
-    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(BLOCK_SIZE / TILE_SIZE, BLOCK_SIZE / TILE_SIZE);
-    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE, (M + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(<span class="pl-c1">BLOCK_SIZE</span> / <span class="pl-c1">TILE_SIZE</span>, <span class="pl-c1">BLOCK_SIZE</span> / <span class="pl-c1">TILE_SIZE</span>);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>, (M + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>);
     TilingGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
     <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
 }</pre></div>
@@ -372,26 +372,26 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/0f99255a-a341-4837-b70a-ff5e8b7b3ce1"><img width="577" height="211" alt="Image" src="https://github.com/user-attachments/assets/0f99255a-a341-4837-b70a-ff5e8b7b3ce1" style="max-width: 100%; height: auto; max-height: 211px;; aspect-ratio: 577 / 211; background-color: var(--bgColor-muted); border-radius: 6px" class="js-gh-image-fallback"></a></p>
 <hr>
 <h3>4. vector load kernel实现</h3>
-<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BLOCK_SIZE = <span class="pl-c1">32</span>;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> TILE_SIZE = <span class="pl-c1">4</span>;
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BLOCK_SIZE</span> = <span class="pl-c1">32</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">TILE_SIZE</span> = <span class="pl-c1">4</span>;
 
 <span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">VecGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
-    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockA[BLOCK_SIZE][BLOCK_SIZE + <span class="pl-c1">1</span>];
-    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockB[BLOCK_SIZE][BLOCK_SIZE + <span class="pl-c1">1</span>];
-    <span class="pl-k">float</span> tileC[TILE_SIZE][TILE_SIZE] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockA[<span class="pl-c1">BLOCK_SIZE</span>][<span class="pl-c1">BLOCK_SIZE</span> + <span class="pl-c1">1</span>];
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> blockB[<span class="pl-c1">BLOCK_SIZE</span>][<span class="pl-c1">BLOCK_SIZE</span> + <span class="pl-c1">1</span>];
+    <span class="pl-k">float</span> tileC[<span class="pl-c1">TILE_SIZE</span>][<span class="pl-c1">TILE_SIZE</span>] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};
 
-    <span class="pl-c1">uint32_t</span> blockARowStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * BLOCK_SIZE;
-    <span class="pl-c1">uint32_t</span> blockBColStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * BLOCK_SIZE;
+    <span class="pl-c1">uint32_t</span> blockARowStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">BLOCK_SIZE</span>;
+    <span class="pl-c1">uint32_t</span> blockBColStart = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">BLOCK_SIZE</span>;
     
-    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; (K + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE; i++) {
-        <span class="pl-k">int</span> blockAColStart = i * BLOCK_SIZE;
-        <span class="pl-k">int</span> blockBRowStart = i * BLOCK_SIZE;
+    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> i = <span class="pl-c1">0</span>; i &lt; (K + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>; i++) {
+        <span class="pl-k">int</span> blockAColStart = i * <span class="pl-c1">BLOCK_SIZE</span>;
+        <span class="pl-k">int</span> blockBRowStart = i * <span class="pl-c1">BLOCK_SIZE</span>;
 
         #<span class="pl-k">pragma</span> unroll
-        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
-            <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE / <span class="pl-c1">4</span>; k++) {
-                <span class="pl-k">int</span> innerRow = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j;
-                <span class="pl-k">int</span> innerCol = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k * <span class="pl-c1">4</span>;
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">TILE_SIZE</span>; j++) {
+            <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; <span class="pl-c1">TILE_SIZE</span> / <span class="pl-c1">4</span>; k++) {
+                <span class="pl-k">int</span> innerRow = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">TILE_SIZE</span> + j;
+                <span class="pl-k">int</span> innerCol = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">TILE_SIZE</span> + k * <span class="pl-c1">4</span>;
 
                 <span class="pl-k">if</span> ((blockARowStart + innerRow) &lt; M &amp;&amp; (blockAColStart + innerCol) &lt; K){
                     <span class="pl-c1">float4</span> tmpA = <span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">float4</span>*&gt;(&amp;A[(blockARowStart + innerRow) * K + blockAColStart + innerCol])[<span class="pl-c1">0</span>];
@@ -425,20 +425,20 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
         <span class="pl-c1">__syncthreads</span>();
 
         #<span class="pl-k">pragma</span> unroll
-        <span class="pl-k">for</span> (<span class="pl-k">int</span> dotIdx = <span class="pl-c1">0</span>; dotIdx &lt; BLOCK_SIZE; dotIdx++) {
-            <span class="pl-k">float</span> regA[TILE_SIZE];
-            <span class="pl-k">float</span> regB[TILE_SIZE];
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> dotIdx = <span class="pl-c1">0</span>; dotIdx &lt; <span class="pl-c1">BLOCK_SIZE</span>; dotIdx++) {
+            <span class="pl-k">float</span> regA[<span class="pl-c1">TILE_SIZE</span>];
+            <span class="pl-k">float</span> regB[<span class="pl-c1">TILE_SIZE</span>];
 
             #<span class="pl-k">pragma</span> unroll
-            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
-                regA[j] = blockA[<span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j][dotIdx];
-                regB[j] = blockB[dotIdx][<span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + j];
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">TILE_SIZE</span>; j++) {
+                regA[j] = blockA[<span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">TILE_SIZE</span> + j][dotIdx];
+                regB[j] = blockB[dotIdx][<span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">TILE_SIZE</span> + j];
             }
 
             #<span class="pl-k">pragma</span> unroll
-            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">TILE_SIZE</span>; j++) {
                 #<span class="pl-k">pragma</span> unroll
-                <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
+                <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; <span class="pl-c1">TILE_SIZE</span>; k++) {
                     tileC[j][k] += regA[j] * regB[k];
                 }
             }
@@ -447,10 +447,10 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     }
     
     #<span class="pl-k">pragma</span> unroll
-    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; TILE_SIZE; j++) {
-        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; TILE_SIZE; k++) {
-            <span class="pl-k">int</span> finalRow = blockARowStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * TILE_SIZE + j;
-            <span class="pl-k">int</span> finalCol = blockBColStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * TILE_SIZE + k;
+    <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">TILE_SIZE</span>; j++) {
+        <span class="pl-k">for</span> (<span class="pl-c1">uint32_t</span> k = <span class="pl-c1">0</span>; k &lt; <span class="pl-c1">TILE_SIZE</span>; k++) {
+            <span class="pl-k">int</span> finalRow = blockARowStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">y</span> * <span class="pl-c1">TILE_SIZE</span> + j;
+            <span class="pl-k">int</span> finalCol = blockBColStart + <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span> * <span class="pl-c1">TILE_SIZE</span> + k;
             <span class="pl-k">if</span> (finalRow &lt; M &amp;&amp; finalCol &lt; N) {
                 C[finalRow * N + finalCol] = tileC[j][k];
             }
@@ -459,8 +459,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 }
 
 <span class="pl-k">void</span> <span class="pl-en">LaunchVecGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
-    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(BLOCK_SIZE / TILE_SIZE, BLOCK_SIZE / TILE_SIZE);
-    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE, (M + BLOCK_SIZE - <span class="pl-c1">1</span>) / BLOCK_SIZE);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(<span class="pl-c1">BLOCK_SIZE</span> / <span class="pl-c1">TILE_SIZE</span>, <span class="pl-c1">BLOCK_SIZE</span> / <span class="pl-c1">TILE_SIZE</span>);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>, (M + <span class="pl-c1">BLOCK_SIZE</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BLOCK_SIZE</span>);
     VecGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
     <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
 }</pre></div>
@@ -470,19 +470,19 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p><a target="_blank" rel="noopener noreferrer" href="https://github.com/user-attachments/assets/52cdf8d3-ce03-4ab6-a67d-d8bfbf49732d"><img width="618" height="213" alt="Image" src="https://github.com/user-attachments/assets/52cdf8d3-ce03-4ab6-a67d-d8bfbf49732d" style="max-width: 100%; height: auto; max-height: 213px;; aspect-ratio: 618 / 213; background-color: var(--bgColor-muted); border-radius: 6px" class="js-gh-image-fallback"></a></p>
 <hr>
 <h3>5. warp tiling + double buffer kernel实现</h3>
-<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> BM = <span class="pl-c1">128</span>; <span class="pl-c"><span class="pl-c">//</span> Block M</span>
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> BN = <span class="pl-c1">128</span>; <span class="pl-c"><span class="pl-c">//</span> Block N</span>
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> BK = <span class="pl-c1">8</span>;   <span class="pl-c"><span class="pl-c">//</span> Block K</span>
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> WM = <span class="pl-c1">64</span>;  <span class="pl-c"><span class="pl-c">//</span> Warp M</span>
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> WN = <span class="pl-c1">32</span>;  <span class="pl-c"><span class="pl-c">//</span> Warp N</span>
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> TM = <span class="pl-c1">8</span>;   <span class="pl-c"><span class="pl-c">//</span> Thread M</span>
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> TN = <span class="pl-c1">8</span>;   <span class="pl-c"><span class="pl-c">//</span> Thread N</span>
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> NUM_THREADS = <span class="pl-c1">256</span>; 
+<div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BM</span> = <span class="pl-c1">128</span>; <span class="pl-c"><span class="pl-c">//</span> Block M</span>
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BN</span> = <span class="pl-c1">128</span>; <span class="pl-c"><span class="pl-c">//</span> Block N</span>
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BK</span> = <span class="pl-c1">8</span>;   <span class="pl-c"><span class="pl-c">//</span> Block K</span>
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">WM</span> = <span class="pl-c1">64</span>;  <span class="pl-c"><span class="pl-c">//</span> Warp M</span>
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">WN</span> = <span class="pl-c1">32</span>;  <span class="pl-c"><span class="pl-c">//</span> Warp N</span>
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">TM</span> = <span class="pl-c1">8</span>;   <span class="pl-c"><span class="pl-c">//</span> Thread M</span>
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">TN</span> = <span class="pl-c1">8</span>;   <span class="pl-c"><span class="pl-c">//</span> Thread N</span>
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">NUM_THREADS</span> = <span class="pl-c1">256</span>; 
 
 <span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">WarpTiledDoubleBufferGemmKernel</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
     <span class="pl-c"><span class="pl-c">//</span> 为了避免 Bank Conflict，将 A 转置存入 Shared Memory，B 保持正常布局</span>
-    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> <span class="pl-smi">sA</span>[<span class="pl-c1">2</span>][BK][BM];
-    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> <span class="pl-smi">sB</span>[<span class="pl-c1">2</span>][BK][BN];
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> <span class="pl-smi">sA</span>[<span class="pl-c1">2</span>][<span class="pl-c1">BK</span>][<span class="pl-c1">BM</span>];
+    <span class="pl-k">__shared__</span> <span class="pl-k">float</span> <span class="pl-smi">sB</span>[<span class="pl-c1">2</span>][<span class="pl-c1">BK</span>][<span class="pl-c1">BN</span>];
 
     <span class="pl-k">const</span> <span class="pl-k">int</span> tid = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
     <span class="pl-k">const</span> <span class="pl-k">int</span> bx = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span>; <span class="pl-c"><span class="pl-c">//</span> Block Col -&gt; N</span>
@@ -494,12 +494,12 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     <span class="pl-k">const</span> <span class="pl-k">int</span> warpCol = warpId % <span class="pl-c1">4</span>;
     <span class="pl-k">const</span> <span class="pl-k">int</span> laneRow = laneId / <span class="pl-c1">4</span>;  <span class="pl-c"><span class="pl-c">//</span> Warp 内 32 个线程的排列: 8(M) x 4(N)</span>
     <span class="pl-k">const</span> <span class="pl-k">int</span> laneCol = laneId % <span class="pl-c1">4</span>;
-    <span class="pl-k">const</span> <span class="pl-k">int</span> rowC = by * BM + warpRow * WM + laneRow * TM;  <span class="pl-c"><span class="pl-c">//</span> 计算当前线程负责的 Global C 矩阵的起始坐标</span>
-    <span class="pl-k">const</span> <span class="pl-k">int</span> colC = bx * BN + warpCol * WN + laneCol * TN;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> rowC = by * <span class="pl-c1">BM</span> + warpRow * <span class="pl-c1">WM</span> + laneRow * <span class="pl-c1">TM</span>;  <span class="pl-c"><span class="pl-c">//</span> 计算当前线程负责的 Global C 矩阵的起始坐标</span>
+    <span class="pl-k">const</span> <span class="pl-k">int</span> colC = bx * <span class="pl-c1">BN</span> + warpCol * <span class="pl-c1">WN</span> + laneCol * <span class="pl-c1">TN</span>;
 
-    <span class="pl-k">float</span> regC[TM][TN] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>}; <span class="pl-c"><span class="pl-c">//</span> 累加器 C</span>
-    <span class="pl-k">float</span> regA[TM] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};     <span class="pl-c"><span class="pl-c">//</span> 缓存 A</span>
-    <span class="pl-k">float</span> regB[TN] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};     <span class="pl-c"><span class="pl-c">//</span> 缓存 B</span>
+    <span class="pl-k">float</span> regC[<span class="pl-c1">TM</span>][<span class="pl-c1">TN</span>] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>}; <span class="pl-c"><span class="pl-c">//</span> 累加器 C</span>
+    <span class="pl-k">float</span> regA[<span class="pl-c1">TM</span>] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};     <span class="pl-c"><span class="pl-c">//</span> 缓存 A</span>
+    <span class="pl-k">float</span> regB[<span class="pl-c1">TN</span>] = {<span class="pl-c1">0</span>.<span class="pl-c1">0f</span>};     <span class="pl-c"><span class="pl-c">//</span> 缓存 B</span>
 
     <span class="pl-c"><span class="pl-c">//</span> A 矩阵块尺寸 128x8，共 1024 个元素，256 线程每人读 4 个 (1 个 float4)</span>
     <span class="pl-k">const</span> <span class="pl-k">int</span> aLoadRow = tid / <span class="pl-c1">2</span>;         <span class="pl-c"><span class="pl-c">//</span> 0~127</span>
@@ -513,7 +513,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     <span class="pl-k">int</span> read_stage = <span class="pl-c1">0</span>;
     <span class="pl-k">int</span> global_k = <span class="pl-c1">0</span>;
     
-    <span class="pl-k">int</span> a_gRow = by * BM + aLoadRow;
+    <span class="pl-k">int</span> a_gRow = by * <span class="pl-c1">BM</span> + aLoadRow;
     <span class="pl-k">int</span> a_gCol = global_k + aLoadCol;
     <span class="pl-k">if</span> (a_gRow &lt; M &amp;&amp; a_gCol &lt; K) {
         <span class="pl-c1">float4</span> tmpA = <span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">float4</span>*&gt;(&amp;A[a_gRow * K + a_gCol])[<span class="pl-c1">0</span>];
@@ -530,7 +530,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     }
 
     <span class="pl-k">int</span> b_gRow = global_k + bLoadRow;
-    <span class="pl-k">int</span> b_gCol = bx * BN + bLoadCol;
+    <span class="pl-k">int</span> b_gCol = bx * <span class="pl-c1">BN</span> + bLoadCol;
     <span class="pl-k">if</span> (b_gRow &lt; K &amp;&amp; b_gCol &lt; N) {
         <span class="pl-c1">float4</span> tmpB = <span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">float4</span>*&gt;(&amp;B[b_gRow * N + b_gCol])[<span class="pl-c1">0</span>];
         <span class="pl-smi">sB</span>[write_stage][bLoadRow][bLoadCol + <span class="pl-c1">0</span>] = tmpB.<span class="pl-smi">x</span>;
@@ -545,12 +545,12 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     }
     <span class="pl-c1">__syncthreads</span>();
 
-    <span class="pl-k">for</span> (global_k = <span class="pl-c1">0</span>; global_k &lt; K; global_k += BK) {
+    <span class="pl-k">for</span> (global_k = <span class="pl-c1">0</span>; global_k &lt; K; global_k += <span class="pl-c1">BK</span>) {
         <span class="pl-c"><span class="pl-c">//</span> 切换写入 stage 缓冲区</span>
         write_stage ^= <span class="pl-c1">1</span>;
         
         <span class="pl-c"><span class="pl-c">//</span> 如果不是最后一个块，预取下一个 Block 的数据</span>
-        <span class="pl-k">int</span> next_k = global_k + BK;
+        <span class="pl-k">int</span> next_k = global_k + <span class="pl-c1">BK</span>;
         <span class="pl-k">if</span> (next_k &lt; K) {
             a_gCol = next_k + aLoadCol;
             <span class="pl-k">if</span> (a_gRow &lt; M &amp;&amp; a_gCol &lt; K) {
@@ -583,21 +583,21 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 
         <span class="pl-c"><span class="pl-c">//</span> Warp 内的外积计算 (计算当前 read_stage 缓冲内的数据)</span>
         #<span class="pl-k">pragma</span> unroll
-        <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; BK; k++) {
+        <span class="pl-k">for</span> (<span class="pl-k">int</span> k = <span class="pl-c1">0</span>; k &lt; <span class="pl-c1">BK</span>; k++) {
             #<span class="pl-k">pragma</span> unroll
-            <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; TM; i++) {
-                regA[i] = <span class="pl-smi">sA</span>[read_stage][k][warpRow * WM + laneRow * TM + i];
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; <span class="pl-c1">TM</span>; i++) {
+                regA[i] = <span class="pl-smi">sA</span>[read_stage][k][warpRow * <span class="pl-c1">WM</span> + laneRow * <span class="pl-c1">TM</span> + i];
             }
             #<span class="pl-k">pragma</span> unroll
-            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; TN; j++) {
-                regB[j] = <span class="pl-smi">sB</span>[read_stage][k][warpCol * WN + laneCol * TN + j];
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">TN</span>; j++) {
+                regB[j] = <span class="pl-smi">sB</span>[read_stage][k][warpCol * <span class="pl-c1">WN</span> + laneCol * <span class="pl-c1">TN</span> + j];
             }
 
             <span class="pl-c"><span class="pl-c">//</span> 外积计算：regC += regA * regB</span>
             #<span class="pl-k">pragma</span> unroll
-            <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; TM; i++) {
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; <span class="pl-c1">TM</span>; i++) {
                 #<span class="pl-k">pragma</span> unroll
-                <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; TN; j++) {
+                <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">TN</span>; j++) {
                     regC[i][j] += regA[i] * regB[j];
                 }
             }
@@ -609,11 +609,11 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     }
 
     #<span class="pl-k">pragma</span> unroll
-    <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; TM; i++) {
+    <span class="pl-k">for</span> (<span class="pl-k">int</span> i = <span class="pl-c1">0</span>; i &lt; <span class="pl-c1">TM</span>; i++) {
         <span class="pl-k">int</span> <span class="pl-smi">gRow</span> = rowC + i;
         <span class="pl-k">if</span> (<span class="pl-smi">gRow</span> &lt; M) {
             #<span class="pl-k">pragma</span> unroll
-            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; TN; j++) {
+            <span class="pl-k">for</span> (<span class="pl-k">int</span> j = <span class="pl-c1">0</span>; j &lt; <span class="pl-c1">TN</span>; j++) {
                 <span class="pl-k">int</span> <span class="pl-smi">gCol</span> = colC + j;
                 <span class="pl-k">if</span> (<span class="pl-smi">gCol</span> &lt; N) {
                     C[<span class="pl-smi">gRow</span> * N + <span class="pl-smi">gCol</span>] = regC[i][j];
@@ -624,8 +624,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 }
 
 <span class="pl-k">void</span> <span class="pl-en">LaunchWarpTiledDoubleBufferGemm</span>(<span class="pl-k">const</span> <span class="pl-k">float</span>* A, <span class="pl-k">const</span> <span class="pl-k">float</span>* B, <span class="pl-k">float</span>* C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K, cudaStream_t stream) {
-    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(NUM_THREADS);
-    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + BN - <span class="pl-c1">1</span>) / BN, (M + BM - <span class="pl-c1">1</span>) / BM);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(<span class="pl-c1">NUM_THREADS</span>);
+    <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>((N + <span class="pl-c1">BN</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BN</span>, (M + <span class="pl-c1">BM</span> - <span class="pl-c1">1</span>) / <span class="pl-c1">BM</span>);
     WarpTiledDoubleBufferGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(A, B, C, M, N, K);
     <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
 }</pre></div>
@@ -644,16 +644,16 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <h3>6. fp16 + tensor core 实现</h3>
 <div class="highlight highlight-source-cuda-c++"><pre class="notranslate"><span class="pl-k">using</span> <span class="pl-k">namespace</span> <span class="pl-en">nvcuda</span><span class="pl-k">;</span>
 
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> BM = <span class="pl-c1">128</span>;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> BN = <span class="pl-c1">128</span>;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> BK = <span class="pl-c1">32</span>;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> WM = <span class="pl-c1">64</span>;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> WN = <span class="pl-c1">32</span>;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> WARPS_M = BM / WM;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> WARPS_N = BN / WN;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> NUM_THREADS = WARPS_M * WARPS_N * <span class="pl-c1">32</span>;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> SKEW = <span class="pl-c1">16</span>;
-<span class="pl-k">constexpr</span> <span class="pl-k">int</span> HALF_PER_16B = <span class="pl-c1">8</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BM</span> = <span class="pl-c1">128</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BN</span> = <span class="pl-c1">128</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">BK</span> = <span class="pl-c1">32</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">WM</span> = <span class="pl-c1">64</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">WN</span> = <span class="pl-c1">32</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">WARPS_M</span> = <span class="pl-c1">BM</span> / <span class="pl-c1">WM</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">WARPS_N</span> = <span class="pl-c1">BN</span> / <span class="pl-c1">WN</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">NUM_THREADS</span> = <span class="pl-c1">WARPS_M</span> * <span class="pl-c1">WARPS_N</span> * <span class="pl-c1">32</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">SKEW</span> = <span class="pl-c1">16</span>;
+<span class="pl-k">constexpr</span> <span class="pl-k">int</span> <span class="pl-c1">HALF_PER_16B</span> = <span class="pl-c1">8</span>;
 
 <span class="pl-k">__device__</span> <span class="pl-k">__forceinline__</span> __half <span class="pl-en">HalfFromBits</span>(<span class="pl-k">unsigned</span> <span class="pl-k">int</span> bits) {
   <span class="pl-k">return</span> <span class="pl-c1">__ushort_as_half</span>(<span class="pl-k">static_cast</span>&lt;<span class="pl-k">unsigned</span> <span class="pl-k">short</span>&gt;(bits));
@@ -668,11 +668,11 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 
 <span class="pl-c"><span class="pl-c">//</span> A 矩阵块尺寸 128x32，共 4096 个元素，256 线程每人读 16 个 half (2 个 uint4)</span>
 #<span class="pl-k">pragma</span> unroll
-  <span class="pl-k">for</span> (<span class="pl-k">int</span> iter = <span class="pl-c1">0</span>; iter &lt; (BM * BK / HALF_PER_16B) / NUM_THREADS; ++iter) {
-    <span class="pl-k">const</span> <span class="pl-k">int</span> idx = tid + iter * NUM_THREADS;
-    <span class="pl-k">const</span> <span class="pl-k">int</span> aLoadRow = idx / (BK / HALF_PER_16B);
-    <span class="pl-k">const</span> <span class="pl-k">int</span> aLoadCol = (idx % (BK / HALF_PER_16B)) * HALF_PER_16B;
-    <span class="pl-k">const</span> <span class="pl-k">int</span> a_gRow = by * BM + aLoadRow;
+  <span class="pl-k">for</span> (<span class="pl-k">int</span> iter = <span class="pl-c1">0</span>; iter &lt; (<span class="pl-c1">BM</span> * <span class="pl-c1">BK</span> / <span class="pl-c1">HALF_PER_16B</span>) / <span class="pl-c1">NUM_THREADS</span>; ++iter) {
+    <span class="pl-k">const</span> <span class="pl-k">int</span> idx = tid + iter * <span class="pl-c1">NUM_THREADS</span>;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> aLoadRow = idx / (<span class="pl-c1">BK</span> / <span class="pl-c1">HALF_PER_16B</span>);
+    <span class="pl-k">const</span> <span class="pl-k">int</span> aLoadCol = (idx % (<span class="pl-c1">BK</span> / <span class="pl-c1">HALF_PER_16B</span>)) * <span class="pl-c1">HALF_PER_16B</span>;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> a_gRow = by * <span class="pl-c1">BM</span> + aLoadRow;
     <span class="pl-k">const</span> <span class="pl-k">int</span> a_gCol = global_k + aLoadCol;
     <span class="pl-k">const</span> <span class="pl-c1">uint4</span> vec = *<span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">uint4</span> *&gt;(&amp;A[a_gRow * K + a_gCol]);
     <span class="pl-c"><span class="pl-c">//</span> 存入 Shared Memory 时进行转置：[k][m]</span>
@@ -688,12 +688,12 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 
 <span class="pl-c"><span class="pl-c">//</span> B 矩阵块尺寸 32x128，共 4096 个元素，256 线程每人读 16 个 half (2 个 uint4)</span>
 #<span class="pl-k">pragma</span> unroll
-  <span class="pl-k">for</span> (<span class="pl-k">int</span> iter = <span class="pl-c1">0</span>; iter &lt; (BK * BN / HALF_PER_16B) / NUM_THREADS; ++iter) {
-    <span class="pl-k">const</span> <span class="pl-k">int</span> idx = tid + iter * NUM_THREADS;
-    <span class="pl-k">const</span> <span class="pl-k">int</span> bLoadRow = idx / (BN / HALF_PER_16B);
-    <span class="pl-k">const</span> <span class="pl-k">int</span> bLoadCol = (idx % (BN / HALF_PER_16B)) * HALF_PER_16B;
+  <span class="pl-k">for</span> (<span class="pl-k">int</span> iter = <span class="pl-c1">0</span>; iter &lt; (<span class="pl-c1">BK</span> * <span class="pl-c1">BN</span> / <span class="pl-c1">HALF_PER_16B</span>) / <span class="pl-c1">NUM_THREADS</span>; ++iter) {
+    <span class="pl-k">const</span> <span class="pl-k">int</span> idx = tid + iter * <span class="pl-c1">NUM_THREADS</span>;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> bLoadRow = idx / (<span class="pl-c1">BN</span> / <span class="pl-c1">HALF_PER_16B</span>);
+    <span class="pl-k">const</span> <span class="pl-k">int</span> bLoadCol = (idx % (<span class="pl-c1">BN</span> / <span class="pl-c1">HALF_PER_16B</span>)) * <span class="pl-c1">HALF_PER_16B</span>;
     <span class="pl-k">const</span> <span class="pl-k">int</span> b_gRow = global_k + bLoadRow;
-    <span class="pl-k">const</span> <span class="pl-k">int</span> b_gCol = bx * BN + bLoadCol;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> b_gCol = bx * <span class="pl-c1">BN</span> + bLoadCol;
     *<span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-c1">uint4</span> *&gt;(&amp;<span class="pl-smi">sB</span>[stage][bLoadRow][bLoadCol]) =
         *<span class="pl-k">reinterpret_cast</span>&lt;<span class="pl-k">const</span> <span class="pl-c1">uint4</span> *&gt;(&amp;B[b_gRow * N + b_gCol]);
   }
@@ -703,7 +703,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <span class="pl-en">MmaTile</span>(__half (&amp;<span class="pl-smi">sA</span>)[2][BK][BM + SKEW], __half (&amp;<span class="pl-smi">sB</span>)[2][BK][BN + SKEW], int stage, int warpRow,
         int warpCol, wmma::fragment&lt;wmma::accumulator, 16, 16, 16, float&gt; (&amp;c_frag)[4][2]) {
 #<span class="pl-k">pragma</span> unroll
-  <span class="pl-k">for</span> (<span class="pl-k">int</span> k_round = <span class="pl-c1">0</span>; k_round &lt; BK / <span class="pl-c1">16</span>; ++k_round) {
+  <span class="pl-k">for</span> (<span class="pl-k">int</span> k_round = <span class="pl-c1">0</span>; k_round &lt; <span class="pl-c1">BK</span> / <span class="pl-c1">16</span>; ++k_round) {
     <span class="pl-k">const</span> <span class="pl-k">int</span> k_off = k_round * <span class="pl-c1">16</span>;
 
     wmma::fragment&lt;wmma::matrix_a, <span class="pl-c1">16</span>, <span class="pl-c1">16</span>, <span class="pl-c1">16</span>, __half, wmma::col_major&gt; a_frag[<span class="pl-c1">4</span>];
@@ -711,11 +711,11 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 
 #<span class="pl-k">pragma</span> unroll
     <span class="pl-k">for</span> (<span class="pl-k">int</span> m = <span class="pl-c1">0</span>; m &lt; <span class="pl-c1">4</span>; ++m) {
-      <span class="pl-c1">wmma::load_matrix_sync</span>(a_frag[m], &amp;<span class="pl-smi">sA</span>[stage][k_off][warpRow * WM + m * <span class="pl-c1">16</span>], BM + SKEW);
+      <span class="pl-c1">wmma::load_matrix_sync</span>(a_frag[m], &amp;<span class="pl-smi">sA</span>[stage][k_off][warpRow * <span class="pl-c1">WM</span> + m * <span class="pl-c1">16</span>], <span class="pl-c1">BM</span> + <span class="pl-c1">SKEW</span>);
     }
 #<span class="pl-k">pragma</span> unroll
     <span class="pl-k">for</span> (<span class="pl-k">int</span> n = <span class="pl-c1">0</span>; n &lt; <span class="pl-c1">2</span>; ++n) {
-      <span class="pl-c1">wmma::load_matrix_sync</span>(b_frag[n], &amp;<span class="pl-smi">sB</span>[stage][k_off][warpCol * WN + n * <span class="pl-c1">16</span>], BN + SKEW);
+      <span class="pl-c1">wmma::load_matrix_sync</span>(b_frag[n], &amp;<span class="pl-smi">sB</span>[stage][k_off][warpCol * <span class="pl-c1">WN</span> + n * <span class="pl-c1">16</span>], <span class="pl-c1">BN</span> + <span class="pl-c1">SKEW</span>);
     }
 
 #<span class="pl-k">pragma</span> unroll
@@ -728,22 +728,22 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
   }
 }
 
-<span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">__launch_bounds__</span>(NUM_THREADS, <span class="pl-c1">2</span>)
+<span class="pl-k">__global__</span> <span class="pl-k">void</span> <span class="pl-en">__launch_bounds__</span>(<span class="pl-c1">NUM_THREADS</span>, <span class="pl-c1">2</span>)
     TensorGemmKernel(<span class="pl-k">const</span> __half *<span class="pl-k">__restrict__</span> A, <span class="pl-k">const</span> __half *<span class="pl-k">__restrict__</span> B,
                      <span class="pl-k">float</span> *<span class="pl-k">__restrict__</span> C, <span class="pl-k">int</span> M, <span class="pl-k">int</span> N, <span class="pl-k">int</span> K) {
   (<span class="pl-k">void</span>)M;
-  <span class="pl-k">__shared__</span> __half <span class="pl-smi">sA</span>[<span class="pl-c1">2</span>][BK][BM + SKEW];
-  <span class="pl-k">__shared__</span> __half <span class="pl-smi">sB</span>[<span class="pl-c1">2</span>][BK][BN + SKEW];
+  <span class="pl-k">__shared__</span> __half <span class="pl-smi">sA</span>[<span class="pl-c1">2</span>][<span class="pl-c1">BK</span>][<span class="pl-c1">BM</span> + <span class="pl-c1">SKEW</span>];
+  <span class="pl-k">__shared__</span> __half <span class="pl-smi">sB</span>[<span class="pl-c1">2</span>][<span class="pl-c1">BK</span>][<span class="pl-c1">BN</span> + <span class="pl-c1">SKEW</span>];
 
   <span class="pl-k">const</span> <span class="pl-k">int</span> tid = <span class="pl-c1">threadIdx</span>.<span class="pl-smi">x</span>;
   <span class="pl-k">const</span> <span class="pl-k">int</span> bx = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">x</span>; <span class="pl-c"><span class="pl-c">//</span> Block Col -&gt; N</span>
   <span class="pl-k">const</span> <span class="pl-k">int</span> by = <span class="pl-c1">blockIdx</span>.<span class="pl-smi">y</span>; <span class="pl-c"><span class="pl-c">//</span> Block Row -&gt; M</span>
 
   <span class="pl-k">const</span> <span class="pl-k">int</span> warpId = tid / <span class="pl-c1">32</span>;
-  <span class="pl-k">const</span> <span class="pl-k">int</span> warpRow = warpId / WARPS_N; <span class="pl-c"><span class="pl-c">//</span> 8 个 Warp 在 Block 内的排列: 2(M) x 4(N)</span>
-  <span class="pl-k">const</span> <span class="pl-k">int</span> warpCol = warpId % WARPS_N;
-  <span class="pl-k">const</span> <span class="pl-k">int</span> rowC = by * BM + warpRow * WM;
-  <span class="pl-k">const</span> <span class="pl-k">int</span> colC = bx * BN + warpCol * WN;
+  <span class="pl-k">const</span> <span class="pl-k">int</span> warpRow = warpId / <span class="pl-c1">WARPS_N</span>; <span class="pl-c"><span class="pl-c">//</span> 8 个 Warp 在 Block 内的排列: 2(M) x 4(N)</span>
+  <span class="pl-k">const</span> <span class="pl-k">int</span> warpCol = warpId % <span class="pl-c1">WARPS_N</span>;
+  <span class="pl-k">const</span> <span class="pl-k">int</span> rowC = by * <span class="pl-c1">BM</span> + warpRow * <span class="pl-c1">WM</span>;
+  <span class="pl-k">const</span> <span class="pl-k">int</span> colC = bx * <span class="pl-c1">BN</span> + warpCol * <span class="pl-c1">WN</span>;
 
   wmma::fragment&lt;wmma::accumulator, <span class="pl-c1">16</span>, <span class="pl-c1">16</span>, <span class="pl-c1">16</span>, <span class="pl-k">float</span>&gt; c_frag[<span class="pl-c1">4</span>][<span class="pl-c1">2</span>];
 #<span class="pl-k">pragma</span> unroll
@@ -761,12 +761,12 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
   <span class="pl-c1">LoadTensorTile</span>(A, B, <span class="pl-smi">sA</span>, <span class="pl-smi">sB</span>, write_stage, by, bx, global_k, N, K);
   <span class="pl-c1">__syncthreads</span>();
 
-  <span class="pl-k">for</span> (global_k = <span class="pl-c1">0</span>; global_k &lt; K; global_k += BK) {
+  <span class="pl-k">for</span> (global_k = <span class="pl-c1">0</span>; global_k &lt; K; global_k += <span class="pl-c1">BK</span>) {
     <span class="pl-c"><span class="pl-c">//</span> 切换写入 stage 缓冲区</span>
     write_stage ^= <span class="pl-c1">1</span>;
 
     <span class="pl-c"><span class="pl-c">//</span> 如果不是最后一个块，预取下一个 Tile 的数据</span>
-    <span class="pl-k">const</span> <span class="pl-k">int</span> next_k = global_k + BK;
+    <span class="pl-k">const</span> <span class="pl-k">int</span> next_k = global_k + <span class="pl-c1">BK</span>;
     <span class="pl-k">if</span> (next_k &lt; K) {
       <span class="pl-c1">LoadTensorTile</span>(A, B, <span class="pl-smi">sA</span>, <span class="pl-smi">sB</span>, write_stage, by, bx, next_k, N, K);
     }
@@ -802,8 +802,8 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
   }();
   (<span class="pl-k">void</span>)cache_configured;
 
-  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(NUM_THREADS);
-  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>(N / BN, M / BM);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">block</span>(<span class="pl-c1">NUM_THREADS</span>);
+  <span class="pl-k">const</span> <span class="pl-c1">dim3</span> <span class="pl-smi">grid</span>(N / <span class="pl-c1">BN</span>, M / <span class="pl-c1">BM</span>);
   TensorGemmKernel<span class="pl-k">&lt;&lt;&lt;grid, block, <span class="pl-c1">0</span>, stream&gt;&gt;&gt;</span>(a, b, c, M, N, K);
   <span class="pl-c1">CUDA_CHECK</span>(<span class="pl-c1">cudaPeekAtLastError</span>());
 }
